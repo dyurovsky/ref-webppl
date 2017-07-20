@@ -1,0 +1,102 @@
+var speechCost = 0
+var pointCost = 70
+var successValue = 100
+
+var knowProb = .5
+
+var argMax = function(f, ar){
+  return maxWith(f, ar)[0]
+};
+
+
+var s = function(f, ar){
+  return maxWith(f, ar)[0]
+};
+
+var alpha = 1
+
+var actions = ['speak', 'point'];
+
+
+var outcome = function(action) {
+  var outcomes = ['point_success', 'speak_success', 'failure'];
+  var successProbs = (action === 'speak') ? [0, knowProb, 1 - knowProb] : [1, 0, 0]
+  return categorical(successProbs, outcomes);
+};
+
+var utility = function(outcome) {
+  var table = { 
+    point_success: successValue - pointCost, 
+    speak_success: successValue - speechCost,
+    failure: 0,
+  };
+  return table[outcome];
+};
+
+var argMaxSpeaker = function() {
+   var expectedUtility = function(action) {
+    return expectation(Infer({ 
+      model() {
+        return utility(outcome(action));
+      }
+    }));
+  };
+
+  
+  return argMax(expectedUtility, actions);
+};
+
+var softMaxSpeaker = function() {
+  return Infer({ 
+    model() {
+
+      var action = uniformDraw(actions);
+      
+      var expectedUtility = function(action) {
+        return expectation(Infer({ 
+          model() {
+            return utility(outcome(action));
+          }
+        }));
+      };
+      
+      factor(alpha * expectedUtility(action));
+      
+      return action;
+    }
+  });
+};
+
+var sampleSpeaker = function() {
+  return Infer({ 
+    model() {
+
+      var action = uniformDraw(actions);
+      
+      var expectedUtility = function(action) {
+        return expectation(Infer({ 
+          model() {
+            return utility(outcome(action));
+          }
+        }));
+      };
+      
+      factor(alpha * Math.log(expectedUtility(action)));
+      
+      return action;
+    }
+  });
+};
+
+
+
+
+viz(repeat(1000, function() { sample(sampleSpeaker())}))
+
+
+// receiver
+//var receiverKnows = function() {
+//  return flip(.5)
+//  }
+
+//repeat(10,speakerProduces)
