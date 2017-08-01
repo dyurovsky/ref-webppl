@@ -53,7 +53,7 @@ var sampleSpeaker = function() {
 };
 
 
-viz(repeat(1000, function() { sample(sampleSpeaker())}))
+repeat(1000, function() { sample(sampleSpeaker())})
 
 
 //repeat(10,speakerProduces)
