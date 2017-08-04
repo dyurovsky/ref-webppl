@@ -65,39 +65,39 @@ var trials= ['wug','toma','toma','dax','dax','dax','dax']
 
 
 var training = function(trialArray, vocabulary) {
-  // if (vocabulary.length == 0) {var trialArray = trialAr.splice()}
-  if (trialArray.length == 0) {return vocabulary}
-
+  // if (trialArray.length == 0) {return vocabulary}
 
   // calls learning on a training set...
-  var currentOne = trialArray.pop()
+  // var currentOne = trialArray.pop()
 
-  var repeatIndex = map(function(e) {return e.label;}, vocabulary).indexOf(currentOne)
-  if(repeatIndex > -1) {
-    var wordToUpdate = vocabulary[repeatIndex] 
+  map(function(currentOne) {
+    var repeatIndex = map(function(e) {return e.label;}, vocabulary).indexOf(currentOne)
+    if(repeatIndex > -1) {
+      var wordToUpdate = vocabulary[repeatIndex] 
 
-    var updatedWord = extend(wordToUpdate, { 
-      exposures: wordToUpdate.exposures+1, 
-      known: learning(wordToUpdate.known) 
-    })
+      var updatedWord = extend(wordToUpdate, { 
+        exposures: wordToUpdate.exposures+1, 
+        known: learning(wordToUpdate.known) 
+      })
 
-    vocabulary.splice(repeatIndex, 1, updatedWord) 
+      vocabulary.splice(repeatIndex, 1, updatedWord) 
 
-  } else {
+    } else {
 
-    var newWord = {
-     label: currentOne,
-     exposures: 1,
-     known: learning(0)
-    };
-    vocabulary.push(newWord)
+      var newWord = {
+       label: currentOne,
+       exposures: 1,
+       known: learning(0)
+      };
+      vocabulary.push(newWord)
 
-  }
+    }
+  }, trialArray)
+
+  return vocabulary
 
   // if we are done, return
-  if (trialArray.length >= 0) {training(trialArray, vocabulary)}
-
-
+  // if (trialArray.length >= 0) {training(trialArray, vocabulary)}
 }
 
 
