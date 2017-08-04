@@ -112,9 +112,6 @@ var simulate = function(trialArray) {
 }
 
 
-
-//------------------------------------------
-
 //training(trials, [])
 repeat(3, function() {training(trials, [])})
 //repeat(1, function() {learning(0, 1)})
