@@ -52,54 +52,86 @@ var sampleSpeaker = function() {
   });
 };
 
-var learning = function(known) {
+
+
+
+var learning = function(known, prob) {
   // model that takes 0/1 knowledge and updates based on trials, based on some parameter P
-  var probLearned = flip(.5)
+  var probLearned = flip(prob)
   // no forgetting, so only update prob if unknown
   if(known==true) {return true;} else {return probLearned;}
+  //return known
 }
 
-var trials= ['wug','toma','toma','dax','dax','dax','dax']
+var trials= ['wug','toma','toma','dax','dax','dax','dax',
+             'fep','blicket','blicket','kreeb','kreeb','kreeb','kreeb',
+             'gazzer','kiv','kiv','manu','manu','manu','manu',]
 
 
+var initializeVocab = function(emptyArray) {
+  var wordList = ["blicket", "kreeb", "wug", "fep", 
+                          "toma", "dax", "gazzer", "kiv","manu"]
+  map(function(element) {
+     var newWord = {
+       label: element,
+       exposures: 0,
+       known: 0
+     };
+     emptyArray.push(newWord)
+  }, wordList)
+  return emptyArray
+}
 
 
-var training = function(trialArray, vocabulary) {
-  // if (trialArray.length == 0) {return vocabulary}
+var training = function(trialArray, vocabulary, learnProb) {
 
-  // calls learning on a training set...
-  // var currentOne = trialArray.pop()
+  var vocabSlice = vocabulary.splice()
+
+  if (vocabSlice.length == 0) {
+    initializeVocab(vocabSlice)
+  }
 
   map(function(currentOne) {
-    var repeatIndex = map(function(e) {return e.label;}, vocabulary).indexOf(currentOne)
-    if(repeatIndex > -1) {
-      var wordToUpdate = vocabulary[repeatIndex] 
+    var vocabIndex = map(function(e) {return e.label;}, vocabSlice).indexOf(currentOne)
+      var wordToUpdate = vocabSlice[vocabIndex] 
 
-      var updatedWord = extend(wordToUpdate, { 
+      var updatedWord =  { 
+        label: wordToUpdate.label,
         exposures: wordToUpdate.exposures+1, 
-        known: learning(wordToUpdate.known) 
-      })
+        known: learning(wordToUpdate.known, learnProb) 
+      }
 
-      vocabulary.splice(repeatIndex, 1, updatedWord) 
-
-    } else {
-
-      var newWord = {
-       label: currentOne,
-       exposures: 1,
-       known: learning(0)
-      };
-      vocabulary.push(newWord)
-
-    }
+      vocabSlice.splice(vocabIndex, 1, updatedWord)  
   }, trialArray)
 
-  return vocabulary
-
-  // if we are done, return
-  // if (trialArray.length >= 0) {training(trialArray, vocabulary)}
+  return vocabSlice 
 }
 
+
+
+var sameVocabulary = function(myVocab, yourVocab) {
+  var differences = []
+  map2(function(x, y) {
+    // return x.known != y.known
+    if (x.known != y.known) {
+      differences.push('notSame')
+    } 
+  }, 
+  myVocab,
+  yourVocab)    
+  return differences.length==0
+}
+
+var estimateLearnProb = function(vocabulary) {
+  var parameter = sample(Beta({a:.5,b:.5}));
+
+  var learnSample = training(trials, [], parameter);
+
+  condition(sameVocabulary(vocabulary, learnSample))
+  //condition(parameter < .4)
+  return parameter;
+  //return learnSample;
+}
 
 // use training() to infer what distribution over Ps (see factor() and logistic regression examples)
 var simulate = function(trialArray) {
@@ -112,8 +144,22 @@ var simulate = function(trialArray) {
 }
 
 
+  // var vocabEx1= [{"label":"wug","exposures":1,"known":false}, {"blicket":"wug","exposures":1,"known":false}]
+  // var vocabEx2= [{"label":"wug","exposures":3,"known":false}, {"blicket":"wug","exposures":1,"known":false}]
+  // sameVocabulary(vocabEx1,vocabEx2)
+  
+
+// repeat(10, function() {training(trials,[], .3)})
+var myLearning = training(trials,[], .45)
+
+// myLearning
+// estimateLearnProb(myLearning)
+
+Infer({method: 'rejection', samples: 5000}, function() {estimateLearnProb(myLearning)})
+
+
 //training(trials, [])
-repeat(3, function() {training(trials, [])})
+//repeat(3, function() {training(trials, [], .45)})
 //repeat(1, function() {learning(0, 1)})
 
 //(repeat(100, function() { sample(sampleSpeaker())}))
