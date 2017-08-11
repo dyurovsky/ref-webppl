@@ -26,73 +26,103 @@ var utility = function(outcome) {
   return table[outcome];
 };
 
+
+
+
+
+var learnProb = function(times, prob) {
+  Binomial({p:prob, n:times}).score(0)
+  // log(1-exp(Binomial({p:prob, n:times}).score(0)))
+}
+
+// learnProb(4,.45)
+
+
+
 var learning = function(known, prob) {
   // model that takes 0/1 knowledge and updates based on trials, based on some parameter P
   var probLearned = flip(prob)
+
   // no forgetting, so only update prob if unknown
   if(known==true) {return true;} else {return probLearned;}
   //return known
 }
 
-var trials = ["wug","toma","toma","dax","dax","dax","dax",
-             "fep","blicket","blicket","kreeb","kreeb","kreeb","kreeb",
-             "gazzer","kiv","kiv","manu","manu","manu","manu"]
 
 var initializeVocab = function(emptyArray) {
   var wordList = ["blicket", "kreeb", "wug", "fep", 
                           "toma", "dax", "gazzer", "kiv","manu"]
   map(function(element) {
      var newWord = {
-       label: element,
-       exposures: 0,
-       known: false
+      label: element,
+      exposures: 0,
+      known: false
      };
      emptyArray.push(newWord)
   }, wordList)
   return emptyArray
 }
 
+var wordFromVocab = function(word, vocabulary) {
+  var vocabIndex = _.findIndex(vocabulary, {label: word});
+  return vocabulary[vocabIndex];
+}
+
 
 var training = function(trialArray, vocabulary, learnProb) {
 
-  var vocabSplice = vocabulary.splice()
+  var vocabSlice = vocabulary.slice()
 
-  if (vocabSplice.length == 0) {
-    initializeVocab(vocabSplice)
+  if (vocabSlice.length == 0) {
+    initializeVocab(vocabSlice)
   }
 
-  return trainOneWord(0, vocabSplice, learnProb);
-}
+  map(function(trial) {
+    var vocabIndex = _.findIndex(vocabSlice, {label: trial});
+    var wordToUpdate = vocabSlice[vocabIndex];
 
-var trainOneWord = function(trial, vocabulary, learnProb) {
+    var updatedWord =  { 
+      label: wordToUpdate.label,
+      exposures: wordToUpdate.exposures+1, 
+      known: learning(wordToUpdate.known, learnProb) 
+    }
 
-  if(trials.length == trial)
-    return vocabulary;
+    vocabSlice.splice(vocabIndex, 1, updatedWord);
 
-  var thisTrial = trials[trial]
+  }, trialArray)
 
-  var vocabIndex = map(function(e) {return e.label;}, vocabulary).indexOf(thisTrial);
-  var wordToUpdate = vocabulary[vocabIndex];
 
-  var updatedWord =  { 
-    label: wordToUpdate.label,
-    exposures: wordToUpdate.exposures+1, 
-    known: learning(wordToUpdate.known, learnProb) 
-  }
-
-  vocabulary.splice(vocabIndex, 1, updatedWord);
-
-  return trainOneWord(trial+1, vocabulary, learnProb);
-
+  return vocabSlice;
 }
 
 
-var possibleVocabs = function(trialArray, learnProb) {
-  return Infer({method: "rejection", samples:10000, 
+
+
+var possibleVocabs = function(trialArray, learnProbDist) {
+  return Infer({method: "rejection", samples:100, 
     model() {
-      return training(trialArray, [], learnProb) ;
-  }});
+      var sampleP = sample(learnProbDist);
+      var oneVocab = training(trialArray, [], sampleP) ;
+      return oneVocab;
+    }
+  });
 };
+
+var conditionVocabs = function(vocabDist, word) {
+  return Infer({method: "rejection", samples:100, 
+    model() {
+      var sampleVocab = sample(vocabDist)
+      var targetIndex = _.findIndex(sampleVocab, {label: word})
+
+      condition(sampleVocab[targetIndex].known)
+
+      return sampleVocab
+    }
+  })
+}
+
+
+
 
 var sameVocabulary = function(myVocab, yourVocab) {
   var differences = []
@@ -107,14 +137,19 @@ var sameVocabulary = function(myVocab, yourVocab) {
   return differences.length==0
 }
 
-var estimateLearnProb = function(vocabulary) {
-  var parameter = sample(Beta({a:.5,b:.5}));
-
-  var learnSample = training(trials, [], parameter);
-
-  condition(sameVocabulary(vocabulary, learnSample))
-  return parameter;
+var estimateLearnProb = function(vocabulary, trainingTrials) {
+  //Infer({ method: 'rejection', samples: 10,
+  Infer({  
+    model(){
+      var parameter = sample(Beta({a:.5,b:.5}));
+      var learnSample = training(trainingTrials, [], parameter);
+      observe(training(trainingTrials, [], parameter), vocabulary)
+      //condition(sameVocabulary(vocabulary, learnSample));
+      return parameter
+    }
+  })
 }
+
 
 
 var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
@@ -171,7 +206,6 @@ var unknownReceiver = function(target, myVocab) {
 }
 
 var unknownBoth = function(target) {
-
   var myVocab = training(trials, [], .45)
   var receiverVocab = training(trials, [], .45);
 
@@ -179,13 +213,67 @@ var unknownBoth = function(target) {
 }
 
 
+var constructTrials = function(empiricalVocab) {
+  var empiricalSlice = empiricalVocab.slice()
+    var trials = map(function(element){
+      var arrayToAdd= []
+      repeat(element.exposures, function() {arrayToAdd.push(element.label)})
+      return arrayToAdd
+    }, empiricalSlice)
+    return trials.join().split(',')
+}
+
+
+// var trials = ["wug","toma","toma","dax","dax","dax","dax",
+//              "fep","blicket","blicket","kreeb","kreeb","kreeb","kreeb",
+//              "gazzer","kiv","kiv","manu","manu","manu","manu"]
+ // empiricalTrials[0].realLabel
+
+
+var ldfs = _.uniq(
+  map(function(element) {
+    return element.ldf_num
+  }, empiricalVocabs)
+)
+var ldfs_test = filter(function(subID) {return subID < 3}, ldfs)
+// ldfs_test
+// _.filter(ldfs, function(subID) {return subID < 100})
+// ldfs_test
+
+map( function(x) {
+  var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
+  var myTrials= constructTrials(myVocab)
+  var learnPs = estimateLearnProb(myVocab, myTrials)
+  return learnPs
+}, ldfs_test)
+
+// var myVocab = _.filter(empiricalVocabs, {ldf_num : 1})
+// var myVocab = empiricalVocabs
+// myVocab
+// var myTrials = constructTrials(myVocab)
+ // myTrials
+// var myVocab = training(trials,[], .3)
+// myVocab
+// var learnP = estimateLearnProb(myVocab, myTrials)
+// learnP
+
+
+// var possibleVocabs= estimateLearnProb2(myVocab, trials)
+// observeVocab(myVocab, possibleVocabs)
+
+// updatePossibleVocabs('wug', true)
 //sampleSpeaker(myLearning, "wug")
 
 
 
 //repeat(1000, function() {unknownBoth("wug")})
 
-possibleVocabs(trials, .45)
+
+// var hypotheticalVocabs = possibleVocabs(myTrials, learnP)
+// hypotheticalVocabs
+// conditionVocabs(hypotheticalVocabs, "fep")
+
+// updatingPossibleVocabs(possibleVocabs(trials,.5), 'wug', false)
 
 //training(trials, [])
 //repeat(3, function() {training(trials, [], .45)})

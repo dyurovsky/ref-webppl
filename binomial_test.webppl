@@ -1,0 +1,14 @@
+var learnModel = Infer(function() {
+	var 
+	observe(Binomial({p:.45, n:4}), 0)
+})
+
+learnModel
+
+var outcome = Binomial({p:.45, n:4}).score(0)
+
+var learnProb = function(times, prob) {
+  log(1-exp(Binomial({p:prob, n:times}).score(0)))
+}
+
+learnProb(4,.45)
