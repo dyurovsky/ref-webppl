@@ -30,29 +30,29 @@ var vocabProb = function(vocabulary, prob) {
 } 
 
 
-var learning = function(known, prob) {
-  // model that takes 0/1 knowledge and updates based on trials, based on some parameter P
-  var probLearned = flip(prob)
+// var learning = function(known, prob) {
+//   // model that takes 0/1 knowledge and updates based on trials, based on some parameter P
+//   var probLearned = flip(prob)
 
-  // no forgetting, so only update prob if unknown
-  if(known==true) {return true;} else {return probLearned;}
-  //return known
-}
+//   // no forgetting, so only update prob if unknown
+//   if(known==true) {return true;} else {return probLearned;}
+//   //return known
+// }
 
 
-var initializeVocab = function(emptyArray) {
-  var wordList = ["blicket", "kreeb", "wug", "fep", 
-                          "toma", "dax", "gazzer", "kiv","manu"]
-  map(function(element) {
-     var newWord = {
-      label: element,
-      exposures: 0,
-      known: false
-     };
-     emptyArray.push(newWord)
-  }, wordList)
-  return emptyArray
-}
+// var initializeVocab = function(emptyArray) {
+//   var wordList = ["blicket", "kreeb", "wug", "fep", 
+//                           "toma", "dax", "gazzer", "kiv","manu"]
+//   map(function(element) {
+//      var newWord = {
+//       label: element,
+//       exposures: 0,
+//       known: false
+//      };
+//      emptyArray.push(newWord)
+//   }, wordList)
+//   return emptyArray
+// }
 
 var wordFromVocab = function(word, vocabulary) {
   var vocabIndex = _.findIndex(vocabulary, {label: word});
@@ -177,14 +177,12 @@ var sampleSpeaker = function(speakerVocab, receiverVocab, target) {
 
 
 var unknownReceiver = function(target, myVocab) {
-  estimatedLearnProb = expectation(estimateLearnProb(myVocab));
+  var estimatedLearnProb = expectation(estimateLearnProb(myVocab));
 
   var receiverVocab = training(trials, estimatedLearnProb);
 
   return sample(sampleSpeaker(myVocab, receiverVocab, target));
 }
-
-
 
 var ldfs = _.uniq(
   map(function(element) {
@@ -220,21 +218,3 @@ map( function(x) {
 
 // // updatePossibleVocabs('wug', true)
 // //sampleSpeaker(myLearning, "wug")
-
-
-
-// //repeat(1000, function() {unknownBoth("wug")})
-
-
-// // var hypotheticalVocabs = possibleVocabs(myTrials, learnP)
-// // hypotheticalVocabs
-// // conditionVocabs(hypotheticalVocabs, "fep")
-
-// // updatingPossibleVocabs(possibleVocabs(trials,.5), 'wug', false)
-
-// //training(trials, [])
-// //repeat(3, function() {training(trials, [], .45)})
-// //repeat(1, function() {learning(0, 1)})
-
-// //(repeat(100, function() { sample(sampleSpeaker())}))
-// //repeat(10,speakerProduces)

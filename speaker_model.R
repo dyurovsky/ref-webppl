@@ -85,8 +85,7 @@ empiricalVocabs<- read.csv("empiricalVocabs.csv") %>%
 accs <- empiricalVocabs %>%
   group_by(ldf_num) %>%
   summarise(known = mean(known)) %>%
-  select(known) %>%
-  as.list()
+  select(known)
 
 
 #ggplot(learnProbs_tmp, aes(x = value, y = as.factor(ldf_num))) + geom_joy()
@@ -97,6 +96,9 @@ outcomes <- webppl(program_file = "speaker.wppl")
 ptm <- proc.time()
 outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabs, data_var="empiricalVocabs")
 proc.time() - ptm
+
+quartz()
+hist(outcomes)
 
 # outcomes %>%
 #   select(((ncol(.)/2)+1):ncol(.)) %>%
