@@ -82,25 +82,14 @@ empiricalVocabs<- read.csv("empiricalVocabs.csv") %>%
          label = realLabel,
          known = performance)
 
-# outcomes<- data_frame(run = replicate(5,NULL))
-ptm <- proc.time()
-outcomes<- NULL
-for(i in 1:1){
-  meIndex = (9 * (i-1))+1
-  tmp=empiricalVocabs[meIndex:(meIndex+8),]
-  outcomes <- bind_rows(outcomes, cbind(ldf_num=unique(tmp$ldf_num), webppl(program_file = "speaker2.wppl", data=tmp, data_var="empiricalVocabs")))
-}
-proc.time() - ptm
+accs <- empiricalVocabs %>%
+  group_by(ldf_num) %>%
+  summarise(known = mean(known)) %>%
+  select(known) %>%
+  as.list()
 
 
-# learnProbs_500 <- outcomes
-learnProbs_500 
-
-# learnProbs_tmp <- outcomes
-learnProbs_tmp
-ggplot(learnProbs_tmp, aes(x = value, y = as.factor(ldf_num))) + geom_joy()
-
-hypothetical_vocabs_fep <- outcomes
+#ggplot(learnProbs_tmp, aes(x = value, y = as.factor(ldf_num))) + geom_joy()
 
 
 outcomes <- webppl(program_file = "speaker.wppl")
@@ -109,35 +98,14 @@ ptm <- proc.time()
 outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabs, data_var="empiricalVocabs")
 proc.time() - ptm
 
-outcomes %>%
-  select(((ncol(.)/2)+1):ncol(.)) %>%
-  t() %>%
-  as_tibble() %>%
-  rename(point = V1, speak = V2) %>%
-  rowid_to_column(var = "sample") 
+# outcomes %>%
+#   select(((ncol(.)/2)+1):ncol(.)) %>%
+#   t() %>%
+#   as_tibble() %>%
+#   rename(point = V1, speak = V2) %>%
+#   rowid_to_column(var = "sample") 
 
 
 outcomes %>% group_by(ldf_num) %>% summarize(mean(value))
 #vs
 empiricalVocabs %>% group_by(ldf_num) %>% summarize(known=mean(known)) %>% filter(known<.3)
-
-
-
-
-
-joesTrials <- empiricalTrials %>%
-  filter(ldf_num==1)
-joesVocab <- empiricalVocabs %>%
-  filter(ldf_num==1)
-
-outcomes %>% 
-  group_by(value) %>%
-  summarise(n = n()) %>%
-  mutate(n = n/sum(n))
-
-recall <- function(exposure) inv.logit(-.4252 + 1.1487*log2(exposure))
-
-
-recall2 <-(1-recall(1))*recall(1) + recall(1)
-
-(1-(recall2))*recall(1)+recall2
