@@ -89,7 +89,7 @@ var wordList = ["blicket", "kreeb", "wug", "fep",
 
 var freqList = [4, 4, 4, 2, 2, 2, 1, 1, 1];
 
-var trainingTrials = map2(function(word, freq) { return {label: word, exposures: freq} }, wordList, freqList)
+var trainingTrials = map2(function(word, freq) {return {label: word, exposures: freq} }, wordList, freqList)
 
 // var possibleVocabs = function(trialArray, learnProbDist) {
 //   return Infer({method: "rejection", samples:100, 
@@ -140,11 +140,12 @@ var estimateLearnProb = function(vocabulary) {
   })
 }
 
+
 //var myVocab = training(trainingTrials, .45)
 //estimateLearnProb(myVocab)
 
 var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
-  if(modality =="point") return "point_success";
+  if(modality == "point") return "point_success";
 
   else {
     //get all known items from receiverVocab
@@ -197,7 +198,7 @@ var ldfs = _.uniq(
   }, empiricalVocabs)
 )
 
-var ldfs_test = filter(function(subID) {return subID == 4}, ldfs)
+var ldfs_test = filter(function(subID) {return subID < 2}, ldfs)
 
 map( function(x) {
   var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
@@ -214,6 +215,7 @@ map( function(x) {
   //return sample(sampleSpeaker(myVocab, receiverVocab, 'manu')
   //return selectReferent("speak", "manu", myVocab, receiverVocab)
 }, ldfs_test)
+
 
 // // var myVocab = _.filter(empiricalVocabs, {ldf_num : 1})
 // // var myVocab = empiricalVocabs

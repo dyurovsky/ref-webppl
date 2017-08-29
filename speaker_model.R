@@ -87,6 +87,8 @@ accs <- empiricalVocabs %>%
   summarise(known = mean(known)) %>%
   select(known)
 
+learnP
+
 
 
 
@@ -127,14 +129,17 @@ data_frame(value = rnorm(1000, 0, 40)) %>%
 quartz()
 hist(outcomes)
 
-# outcomes %>%
-#   select(((ncol(.)/2)+1):ncol(.)) %>%
-#   t() %>%
-#   as_tibble() %>%
-#   rename(point = V1, speak = V2) %>%
-#   rowid_to_column(var = "sample") 
+
+tmp <- outcomes %>%
+  select(((ncol(.)/2)+1):ncol(.)) %>%
+  # t() %>%
+  as_tibble() %>%
+  rename(point = V1, speak = V2) %>%
+  rowid_to_column(var = "sample") %>% head()
 
 
 outcomes %>% group_by(ldf_num) %>% summarize(mean(value))
 #vs
 empiricalVocabs %>% group_by(ldf_num) %>% summarize(known=mean(known)) %>% filter(known<.3)
+
+
