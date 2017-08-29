@@ -88,14 +88,41 @@ accs <- empiricalVocabs %>%
   select(known)
 
 
-#ggplot(learnProbs_tmp, aes(x = value, y = as.factor(ldf_num))) + geom_joy()
 
 
 outcomes <- webppl(program_file = "speaker.wppl")
 
-ptm <- proc.time()
-outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabs, data_var="empiricalVocabs")
-proc.time() - ptm
+#ptm <- proc.time()
+outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabs, data_var = "empiricalVocabs")
+#proc.time() - ptm
+
+empirical_learn <-map(1:nrow(outcomes), function(row) as_tibble(outcomes[row,])) %>%
+  bind_rows() %>%
+  mutate(person = 1:nrow(.)) %>%
+  unnest() 
+
+empirical_mean <- empirical_learn %>%
+  group_by(person) %>%
+  summarise(p = weighted.mean(learnPs.support, learnPs.probs)) %>%
+  arrange(p)
+  
+ordered_learn <- empirical_learn %>%
+  mutate(person = factor(person, levels = empirical_mean$person))
+
+
+#%>%
+ 
+
+ggplot(ordered_learn, aes(x = learnPs.support, y = as.factor(person), 
+                              weight = learnPs.probs)) + 
+  geom_joy() + 
+  theme_bw()
+
+
+data_frame(value = rnorm(1000, 0, 40)) %>%
+  ggplot(aes(x = value)) + 
+  geom_histogram()
+
 
 quartz()
 hist(outcomes)

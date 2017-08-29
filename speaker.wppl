@@ -54,6 +54,20 @@ var vocabProb = function(vocabulary, prob) {
 //   return emptyArray
 // }
 
+var initializeVocab = function(trials, learnProb) {
+  var learnedArray = []
+
+  map(function(element) {
+     var newWord = {
+      label: element.label,
+      exposures: element.exposures,
+      known: Math.exp(knownProb(element.exposures, learnProb))
+     };
+     learnedArray.push(newWord)
+  }, trials)
+  return learnedArray
+}
+
 var wordFromVocab = function(word, vocabulary) {
   var vocabIndex = _.findIndex(vocabulary, {label: word});
   return vocabulary[vocabIndex];
@@ -134,22 +148,15 @@ var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
 
   else {
     //get all known items from receiverVocab
-    var speakerKnows = filter(function(x) {return x.label == referent}, speakerVocab).length >= 1
+    var speakerKnows = filter(function(x) {return x.label == referent}, speakerVocab)[0].known
 
     if(!speakerKnows)
       return "failure"
     else {
-      var receiverKnows = filter(function(x) {x.known}, receiverVocab)
+      var receiverKnows = filter(function(x) {return x.label == referent}, receiverVocab)[0].known
       //check if referent known in vocab
 
-      if(filter(function(x) {return x.label == referent}, receiverKnows).length >= 1)
-        return "speak_success";
-      else {
-        //var guess_prob = 1/(receiverVocab.length - receiverKnows.length);     
-        var guess_prob = 0;
-        //var guess_prob = 1/receiverVocab.length
-        return categorical([guess_prob, 1-guess_prob], ["speak_success", "failure"]);
-      }
+      return(categorical([receiverKnows, 1-receiverKnows], ["speak_success", "failure"]));
     }
   }
 }
@@ -190,14 +197,22 @@ var ldfs = _.uniq(
   }, empiricalVocabs)
 )
 
-var ldfs_test = filter(function(subID) {return subID < 4}, ldfs)
-
+var ldfs_test = filter(function(subID) {return subID == 4}, ldfs)
 
 map( function(x) {
   var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
   var learnPs = estimateLearnProb(myVocab)
-  return expectation(learnPs)
+  //return expectation(learnPs)
+  //return {learnPs}
+  var estimatedProb = expectation(learnPs)
+  //sampleSpeaker(myVocab, myVocab, 'wug')
+  var receiverVocab = initializeVocab(myVocab, estimatedProb)
 
+  return map(function(element) {sampleSpeaker(myVocab, receiverVocab, element.label)},
+      myVocab)
+
+  //return sample(sampleSpeaker(myVocab, receiverVocab, 'manu')
+  //return selectReferent("speak", "manu", myVocab, receiverVocab)
 }, ldfs_test)
 
 // // var myVocab = _.filter(empiricalVocabs, {ldf_num : 1})
