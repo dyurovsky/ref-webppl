@@ -8,7 +8,8 @@ var utility = function(outcome) {
   var table = { 
     point_success: successValue - pointCost, 
     speak_success: successValue - speechCost,
-    failure: 0,
+    failure_speaker: 0,
+    failure_receiver: 0,
   };
   return table[outcome];
 };
@@ -30,29 +31,6 @@ var vocabProb = function(vocabulary, prob) {
 } 
 
 
-// var learning = function(known, prob) {
-//   // model that takes 0/1 knowledge and updates based on trials, based on some parameter P
-//   var probLearned = flip(prob)
-
-//   // no forgetting, so only update prob if unknown
-//   if(known==true) {return true;} else {return probLearned;}
-//   //return known
-// }
-
-
-// var initializeVocab = function(emptyArray) {
-//   var wordList = ["blicket", "kreeb", "wug", "fep", 
-//                           "toma", "dax", "gazzer", "kiv","manu"]
-//   map(function(element) {
-//      var newWord = {
-//       label: element,
-//       exposures: 0,
-//       known: false
-//      };
-//      emptyArray.push(newWord)
-//   }, wordList)
-//   return emptyArray
-// }
 
 var initializeVocab = function(trials, learnProb) {
   var learnedArray = []
@@ -84,48 +62,8 @@ var training = function(trials, learnProb) {
 
 }
 
-var wordList = ["blicket", "kreeb", "wug", "fep", 
-                        "toma", "dax", "gazzer", "kiv","manu"];
 
-var freqList = [4, 4, 4, 2, 2, 2, 1, 1, 1];
 
-var trainingTrials = map2(function(word, freq) {return {label: word, exposures: freq} }, wordList, freqList)
-
-// var possibleVocabs = function(trialArray, learnProbDist) {
-//   return Infer({method: "rejection", samples:100, 
-//     model() {
-//       var sampleP = sample(learnProbDist);
-//       var oneVocab = training(trialArray, [], sampleP) ;
-//       return oneVocab;
-//     }
-//   });
-// };
-
-// var conditionVocabs = function(vocabDist, word) {
-//   return Infer({method: "rejection", samples:100, 
-//     model() {
-//       var sampleVocab = sample(vocabDist)
-//       var targetIndex = _.findIndex(sampleVocab, {label: word})
-
-//       condition(sampleVocab[targetIndex].known)
-
-//       return sampleVocab
-//     }
-//   })
-// }
-
-// var sameVocabulary = function(myVocab, yourVocab) {
-//   var differences = []
-//   map2(function(x, y) {
-//     // return x.known != y.known
-//     if (x.known != y.known) {
-//       differences.push("notSame")
-//     } 
-//   }, 
-//   myVocab,
-//   yourVocab)    
-//   return differences.length==0
-// }
 
 var estimateLearnProb = function(vocabulary) {
   Infer({ method: 'MCMC', samples: 10000, burn:2000,
@@ -141,8 +79,6 @@ var estimateLearnProb = function(vocabulary) {
 }
 
 
-//var myVocab = training(trainingTrials, .45)
-//estimateLearnProb(myVocab)
 
 var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
   if(modality == "point") return "point_success";
@@ -152,12 +88,12 @@ var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
     var speakerKnows = filter(function(x) {return x.label == referent}, speakerVocab)[0].known
 
     if(!speakerKnows)
-      return "failure"
+      return "failure_speaker"
     else {
       var receiverKnows = filter(function(x) {return x.label == referent}, receiverVocab)[0].known
       //check if referent known in vocab
 
-      return(categorical([receiverKnows, 1-receiverKnows], ["speak_success", "failure"]));
+      return(categorical([receiverKnows, 1-receiverKnows], ["speak_success", "failure_receiver"]));
     }
   }
 }
@@ -183,6 +119,61 @@ var sampleSpeaker = function(speakerVocab, receiverVocab, target) {
   });
 };
 
+var utilityRecursive = function(trials, target, action, speakerVocab, receiverVocab, U) {
+  var trialArray = trials.slice()
+  var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
+  var utilityUpdated = utility(outcome) + U
+  var targetIndex= _.indexOf(trialArray, target)
+  trialArray.splice(targetIndex, 1)
+  if(_.indexOf(trialArray, target)>=0){
+    var updatedReceiver = updateVocab(receiverVocab, target, outcome)
+    utilityRecursive(trialArray, target, action, speakerVocab, updatedReceiver, utilityUpdated)
+  } else {
+    return  utilityUpdated
+  }
+};
+
+var sampleSpeakerPlanner = function(speakerVocab, receiverVocab, someTrials, target) {
+  return Infer({ 
+    model() {
+      var action = uniformDraw(actions);
+      var expectedUtility = function(action) {
+        return expectation(Infer({ 
+          model() {
+            return utilityRecursive(someTrials, target, action, speakerVocab, receiverVocab, 0);
+          }
+        }));
+      };
+      
+      factor(Math.log(expectedUtility(action)));
+      return action
+    }
+  });
+};
+
+var findWordandUpdate = function(word, vocab, changingKnownTo) {
+  var vocabIndex = _.findIndex(vocab, {label: word});
+  var newWord = {
+    label: vocab[vocabIndex].label,
+    exposures: vocab[vocabIndex].exposures,
+    known: changingKnownTo
+   };
+  vocab.splice(vocabIndex, 1, newWord) 
+  return vocab
+}
+
+var updateVocab = function(receiverVocab, referent, outcome) {
+  if(outcome=="speak_success") {
+    findWordandUpdate(referent, receiverVocab, 1)
+  } 
+  if(outcome=="failure_receiver") {
+    findWordandUpdate(referent, receiverVocab, 0)
+  }
+  // in all other cases, no need to alter because outcome is uninformative
+  return receiverVocab
+}
+
+
 
 var unknownReceiver = function(target, myVocab) {
   var estimatedLearnProb = expectation(estimateLearnProb(myVocab));
@@ -192,46 +183,54 @@ var unknownReceiver = function(target, myVocab) {
   return sample(sampleSpeaker(myVocab, receiverVocab, target));
 }
 
+
+
+// -------------------------------------------------------
+var wordList = ["blicket", "kreeb", "wug", "fep", 
+                        "toma", "dax", "gazzer", "kiv","manu"];
+
+var freqList = [4, 4, 4, 2, 2, 2, 1, 1, 1];
+
+var trainingTrials = map2(function(word, freq) {return {label: word, exposures: freq} }, wordList, freqList)
+
+var gameTrials = ["blicket","blicket","blicket", "kreeb","kreeb","kreeb", "wug","wug","wug", "fep","fep","fep", 
+                        "toma","toma","toma", "dax","dax","dax", "gazzer","gazzer","gazzer", "kiv","kiv","kiv",
+                        "manu","manu","manu"]
+
+
+
 var ldfs = _.uniq(
   map(function(element) {
     return element.ldf_num
   }, empiricalVocabs)
 )
 
-var ldfs_test = filter(function(subID) {return subID < 2}, ldfs)
+var ldfs_test = filter(function(subID) {return subID < 5}, ldfs)
 
-map( function(x) {
+map(function(x) {
   var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
   var learnPs = estimateLearnProb(myVocab)
-  //return expectation(learnPs)
-  //return {learnPs}
+  // return {learnPs}
   var estimatedProb = expectation(learnPs)
-  //sampleSpeaker(myVocab, myVocab, 'wug')
-  var receiverVocab = initializeVocab(myVocab, estimatedProb)
-
-  return map(function(element) {sampleSpeaker(myVocab, receiverVocab, element.label)},
+  var yourVocab = initializeVocab(myVocab, estimatedProb)
+  var vocabProb = map(function(element) {(sampleSpeaker(myVocab, yourVocab, element.label))},
       myVocab)
+  // return vocabProb
+  // var tmp = (sampleSpeaker(myVocab, yourVocab, 'wug'))
+  // return {tmp}
 
-  //return sample(sampleSpeaker(myVocab, receiverVocab, 'manu')
-  //return selectReferent("speak", "manu", myVocab, receiverVocab)
+  // return utilityRecursive(gameTrials, 'toma', 'speak', myVocab, yourVocab, 0)
+   return map(function(element){sampleSpeakerPlanner(myVocab, yourVocab, gameTrials, element)},gameTrials)
+   
+  // map(function(element) {updateVocab(myVocab, yourVocab, element)}, wordList)
+  // return yourVocab
+    // var vocabProb = map(function(element) {(sampleSpeaker(myVocab, yourVocab, element.label))},
+    //   myVocab)
+    // return vocabProb
+
+  // return repeat(3,function() {selectReferent("speak", "dax", myVocab, yourVocab)})
 }, ldfs_test)
 
 
 // // var myVocab = _.filter(empiricalVocabs, {ldf_num : 1})
-// // var myVocab = empiricalVocabs
-// // myVocab
-// // var myTrials = constructTrials(myVocab)
-//  // myTrials
 
-// //var myVocab = training(trials,[], .45)
-
-// //map2(function(time, prob) {knownProb(time, prob)}, [1, 2, 3, 4], [.5, .5, .5, .5])
-
-// //var learnP = estimateLearnProb(myVocab)
-// //learnP
-
-// // var possibleVocabs= estimateLearnProb2(myVocab, trials)
-// // observeVocab(myVocab, possibleVocabs)
-
-// // updatePossibleVocabs('wug', true)
-// //sampleSpeaker(myLearning, "wug")

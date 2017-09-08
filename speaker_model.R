@@ -92,11 +92,9 @@ learnP
 
 
 
-outcomes <- webppl(program_file = "speaker.wppl")
 
-#ptm <- proc.time()
 outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabs, data_var = "empiricalVocabs")
-#proc.time() - ptm
+
 
 empirical_learn <-map(1:nrow(outcomes), function(row) as_tibble(outcomes[row,])) %>%
   bind_rows() %>%
