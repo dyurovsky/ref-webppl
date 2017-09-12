@@ -119,37 +119,75 @@ var sampleSpeaker = function(speakerVocab, receiverVocab, target) {
   });
 };
 
-var utilityRecursive = function(trials, target, action, speakerVocab, receiverVocab, U) {
+var utilityRecursive = function(trials, target, action, speakerVocab, receiverVocab, U, updates, appearanceNumber) {
   var trialArray = trials.slice()
-  var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
-  var utilityUpdated = utility(outcome) + U
+  var outcome1 = selectReferent(action, target, speakerVocab, receiverVocab)
+  // var outcome1 = updates[appearanceNumber].outcome
+  // var outcome1 = updates[0].outcome
+  var utilityUpdated = utility(outcome1) + U
   var targetIndex= _.indexOf(trialArray, target)
   trialArray.splice(targetIndex, 1)
+  
   if(_.indexOf(trialArray, target)>=0){
-    var updatedReceiver = updateVocab(receiverVocab, target, outcome)
-    utilityRecursive(trialArray, target, action, speakerVocab, updatedReceiver, utilityUpdated)
+    var updatedReceiver = updateVocab(receiverVocab, target, outcome1)
+    utilityRecursive(trialArray, target, action, speakerVocab, updatedReceiver, utilityUpdated, updates, appearanceNumber+1)
   } else {
     return  utilityUpdated
   }
 };
 
-var sampleSpeakerPlanner = function(speakerVocab, receiverVocab, someTrials, target) {
-  return Infer({ 
-    model() {
-      var action = uniformDraw(actions);
-      var expectedUtility = function(action) {
-        return expectation(Infer({ 
-          model() {
-            return utilityRecursive(someTrials, target, action, speakerVocab, receiverVocab, 0);
-          }
-        }));
-      };
-      
-      factor(Math.log(expectedUtility(action)));
-      return action
-    }
-  });
+var saveUpdates = function(speakerVocab, receiverVocab, action, target, newArray, optionalRepeats) {
+
+  var newOutcome = selectReferent(action, target, speakerVocab, receiverVocab)
+  var newVocab = updateVocab(receiverVocab, target, newOutcome)
+  var newUpdate = {
+    outcome: newOutcome,
+    vocab: newVocab
+  }
+  newArray.push(newUpdate)
+
+  if(optionalRepeats>1) {
+    saveUpdates(speakerVocab, newVocab, action, target, newArray, optionalRepeats-1)
+  } else {
+    return newArray
+  }
+}
+
+
+var sampleSpeakerPlanner = function(speakerVocab, receiverVocab, someTrials, index) {
+  // var receiverVocab = receiverVocab.slice()
+  return mapIndexed(function(index, element){
+
+    // if(index < someTrials.length) {
+      var restOfTrials = someTrials.slice(index)
+      var element= restOfTrials[0]
+      return Infer({ 
+        model() {
+          var action = uniformDraw(actions);
+                          // var updates = saveUpdates(myVocab, yourVocab, 'speak', 'toma', [], 3)
+
+          var updates = saveUpdates(speakerVocab, receiverVocab, action, element, [], 3)
+          var expectedUtility = function(action) {
+            return expectation(Infer({ 
+              model() {
+                return utilityRecursive(restOfTrials, element, action, speakerVocab, receiverVocab, 0, updates, 0);
+              }
+            }));
+          };
+          
+          factor(Math.log(expectedUtility(action)));
+          return action
+        }
+      });
+
+    //   sampleSpeakerPlanner(speakerVocab, receiverVocab, someTrials, index+1)
+    // } else {
+    //   // return receiverVocab
+    // }
+
+  }, someTrials) 
 };
+
 
 var findWordandUpdate = function(word, vocab, changingKnownTo) {
   var vocabIndex = _.findIndex(vocab, {label: word});
@@ -163,14 +201,15 @@ var findWordandUpdate = function(word, vocab, changingKnownTo) {
 }
 
 var updateVocab = function(receiverVocab, referent, outcome) {
+  var otherVocab=receiverVocab.slice()
   if(outcome=="speak_success") {
-    findWordandUpdate(referent, receiverVocab, 1)
+    findWordandUpdate(referent, otherVocab, 1)
   } 
   if(outcome=="failure_receiver") {
-    findWordandUpdate(referent, receiverVocab, 0)
+    findWordandUpdate(referent, otherVocab, 0)
   }
   // in all other cases, no need to alter because outcome is uninformative
-  return receiverVocab
+  return otherVocab
 }
 
 
@@ -219,9 +258,16 @@ map(function(x) {
   // var tmp = (sampleSpeaker(myVocab, yourVocab, 'wug'))
   // return {tmp}
 
-  // return utilityRecursive(gameTrials, 'toma', 'speak', myVocab, yourVocab, 0)
-   return map(function(element){sampleSpeakerPlanner(myVocab, yourVocab, gameTrials, element)},gameTrials)
-   
+  // return utilityRecursive(gameTrials, 'toma', 'speak', myVocab, yourVocab, 0, saveUpdates(myVocab, yourVocab, 'speak', 'toma', [], 4), 0)
+  // return repeat(10, function() {selectReferent('speak', 'toma',  myVocab, yourVocab)})
+
+                // var updates = saveUpdates(myVocab, yourVocab, 'speak', 'toma', [], 3)
+                // return updates[0].outcome
+
+    sampleSpeakerPlanner(myVocab, yourVocab, gameTrials, 0);
+
+// return  gameTrials.map(function(currentValue, index){return index})
+   // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))
   // map(function(element) {updateVocab(myVocab, yourVocab, element)}, wordList)
   // return yourVocab
     // var vocabProb = map(function(element) {(sampleSpeaker(myVocab, yourVocab, element.label))},
