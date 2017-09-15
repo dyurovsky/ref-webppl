@@ -119,24 +119,7 @@ var sampleSpeaker = function(speakerVocab, receiverVocab, target) {
   });
 };
 
-var utilityRecursive = function(trials, target, action, speakerVocab, receiverVocab, U, updates, appearanceNumber) {
-  var trialArray = trials.slice()
-  var outcome1 = selectReferent(action, target, speakerVocab, receiverVocab)
-  // var outcome1 = updates[appearanceNumber].outcome
-  // var outcome1 = updates[0].outcome
-  var utilityUpdated = utility(outcome1) + U
-  var targetIndex= _.indexOf(trialArray, target)
-  trialArray.splice(targetIndex, 1)
-  
-  if(_.indexOf(trialArray, target)>=0){
-    var updatedReceiver = updateVocab(receiverVocab, target, outcome1)
-    utilityRecursive(trialArray, target, action, speakerVocab, updatedReceiver, utilityUpdated, updates, appearanceNumber+1)
-  } else {
-    return  utilityUpdated
-  }
-};
-
-var saveUpdates = function(speakerVocab, receiverVocab, action, target, newArray, optionalRepeats) {
+var saveUpdates = function(speakerVocab, receiverVocab, action, target, newArray, repeats) {
 
   var newOutcome = selectReferent(action, target, speakerVocab, receiverVocab)
   var newVocab = updateVocab(receiverVocab, target, newOutcome)
@@ -146,47 +129,107 @@ var saveUpdates = function(speakerVocab, receiverVocab, action, target, newArray
   }
   newArray.push(newUpdate)
 
-  if(optionalRepeats>1) {
-    saveUpdates(speakerVocab, newVocab, action, target, newArray, optionalRepeats-1)
+  if(repeats>1) {
+    saveUpdates(speakerVocab, newVocab, action, target, newArray, repeats-1)
   } else {
     return newArray
   }
 }
 
-
-var sampleSpeakerPlanner = function(speakerVocab, receiverVocab, someTrials, index) {
-  // var receiverVocab = receiverVocab.slice()
-  return mapIndexed(function(index, element){
-
-    // if(index < someTrials.length) {
-      var restOfTrials = someTrials.slice(index)
-      var element= restOfTrials[0]
-      return Infer({ 
-        model() {
-          var action = uniformDraw(actions);
-                          // var updates = saveUpdates(myVocab, yourVocab, 'speak', 'toma', [], 3)
-
-          var updates = saveUpdates(speakerVocab, receiverVocab, action, element, [], 3)
-          var expectedUtility = function(action) {
-            return expectation(Infer({ 
-              model() {
-                return utilityRecursive(restOfTrials, element, action, speakerVocab, receiverVocab, 0, updates, 0);
-              }
-            }));
-          };
-          
-          factor(Math.log(expectedUtility(action)));
-          return action
-        }
-      });
-
-    //   sampleSpeakerPlanner(speakerVocab, receiverVocab, someTrials, index+1)
-    // } else {
-    //   // return receiverVocab
-    // }
-
-  }, someTrials) 
+var utilityRecursive = function(trials, target, outcome, speakerVocab, receiverVocab, updates, appearanceNumber) {
+  var trialArray = trials.slice()
+  var utilityUpdated = utility(outcome)
+  var targetIndex= _.indexOf(trialArray, target)
+  trialArray.splice(targetIndex, 1)
+  
+  if(_.indexOf(trialArray, target)>=0){
+    return utilityUpdated + expectation(Infer({ model() {
+      var nextAction = uniformDraw(actions)
+      var nextOutcome = selectReferent(nextAction, target, speakerVocab, receiverVocab)
+      var nextVocab = updateVocab(receiverVocab, target, nextOutcome)
+      utilityRecursive(trialArray, target, nextOutcome, speakerVocab, nextVocab, updates, appearanceNumber+1)
+    }}))
+  } else {
+    return  utilityUpdated
+  }
 };
+
+var sampleSpeakerPlanner = function() {
+  // var receiverVocab = receiverVocab.slice()
+
+  var act = function(speakerVocab, receiverVocab, someTrials, target) {
+
+    // var target = someTrials[index]
+    
+    return Infer({ model() {
+
+      var action = uniformDraw(actions);
+      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials);
+      factor(Math.log(eu));
+      return action;
+    }});
+  }
+
+  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials) {
+    var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
+    var util = utility(outcome)
+
+    //var restOfTrials = index != 0 ? someTrials.slice(index+1): [];
+    var index = _.indexOf(someTrials, target);
+    var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
+
+
+
+    if(index == -1){
+      return util;
+    } else {
+      return util + expectation(Infer({ model() {
+        var updatedReceiver = updateVocab(receiverVocab, target, outcome)
+        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target))
+        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials)
+      }}));
+    }
+  }
+
+  return { act };
+
+};
+
+
+
+//   return mapIndexed(function(index, element){
+
+//     // if(index < someTrials.length) {
+      
+//       // var element= restOfTrials[0]
+//       return Infer({ 
+//         model() {
+//           var action = uniformDraw(actions);
+//           var updates = saveUpdates(speakerVocab, receiverVocab, action, element, [], 3)
+//           var expectedUtility = function(action) {
+//             return expectation(Infer({ 
+//               model() {
+//                 var outcome1 = selectReferent(action, element, speakerVocab, receiverVocab)
+//                   // var outcome1 = updates[appearanceNumber].outcome
+//                   // var outcome1 = updates[0].outcome
+//                 var updatedReceiver = updateVocab(receiverVocab, element, outcome1)
+//                 return utilityRecursive(restOfTrials, element, outcome1, speakerVocab, updatedReceiver, updates, 0);
+//               }
+//             }));
+//           };
+          
+//           factor(Math.log(expectedUtility(action)));
+//           return action
+//         }
+//       });
+
+//     //   sampleSpeakerPlanner(speakerVocab, receiverVocab, someTrials, index+1)
+//     // } else {
+//     //   // return receiverVocab
+//     // }
+
+//   }, someTrials) 
+// };
 
 
 var findWordandUpdate = function(word, vocab, changingKnownTo) {
@@ -206,7 +249,7 @@ var updateVocab = function(receiverVocab, referent, outcome) {
     findWordandUpdate(referent, otherVocab, 1)
   } 
   if(outcome=="failure_receiver") {
-    findWordandUpdate(referent, otherVocab, 0)
+   findWordandUpdate(referent, otherVocab, 0)
   }
   // in all other cases, no need to alter because outcome is uninformative
   return otherVocab
@@ -225,7 +268,7 @@ var unknownReceiver = function(target, myVocab) {
 
 
 // -------------------------------------------------------
-var wordList = ["blicket", "kreeb", "wug", "fep", 
+var wordList = ["blicket", "kreeb", "wug",  "fep", 
                         "toma", "dax", "gazzer", "kiv","manu"];
 
 var freqList = [4, 4, 4, 2, 2, 2, 1, 1, 1];
@@ -234,8 +277,9 @@ var trainingTrials = map2(function(word, freq) {return {label: word, exposures: 
 
 var gameTrials = ["blicket","blicket","blicket", "kreeb","kreeb","kreeb", "wug","wug","wug", "fep","fep","fep", 
                         "toma","toma","toma", "dax","dax","dax", "gazzer","gazzer","gazzer", "kiv","kiv","kiv",
-                        "manu","manu","manu"]
+                        "manu","manu","manu"];
 
+var testingTrials = ["wug", "wug"];
 
 
 var ldfs = _.uniq(
@@ -244,7 +288,7 @@ var ldfs = _.uniq(
   }, empiricalVocabs)
 )
 
-var ldfs_test = filter(function(subID) {return subID < 5}, ldfs)
+var ldfs_test = filter(function(subID) {return subID == 4}, ldfs)
 
 map(function(x) {
   var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
@@ -264,7 +308,18 @@ map(function(x) {
                 // var updates = saveUpdates(myVocab, yourVocab, 'speak', 'toma', [], 3)
                 // return updates[0].outcome
 
-    sampleSpeakerPlanner(myVocab, yourVocab, gameTrials, 0);
+var act = sampleSpeakerPlanner().act;
+
+var act1 = act(myVocab, yourVocab, ["blicket", "blicket","blicket","blicket", "blicket","blicket"], "blicket")
+
+var act2 = act(myVocab, yourVocab, ["blicket"], "blicket")
+
+return {act1, act2}
+
+// map(function(index) {
+//   act(myVocab, yourVocab, gameTrials, index)},
+//    _.range(gameTrials.length))
+
 
 // return  gameTrials.map(function(currentValue, index){return index})
    // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))
