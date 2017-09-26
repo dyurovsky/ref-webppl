@@ -2,7 +2,9 @@ var speechCost = 0
 var pointCost = 70
 var successValue = 100
 
-var actions = ["speak", "point"];
+// var actions = ["speak", "point"];
+var actions = ["speak", "point", "teach"];
+
 
 var utility = function(outcome) {
   var table = { 
@@ -10,6 +12,8 @@ var utility = function(outcome) {
     speak_success: successValue - speechCost,
     failure_speaker: 0,
     failure_receiver: 0,
+    teach_success: successValue - speechCost - pointCost,
+    teach_failure: 0,
   };
   return table[outcome];
 };
@@ -87,13 +91,20 @@ var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
     //get all known items from receiverVocab
     var speakerKnows = filter(function(x) {return x.label == referent}, speakerVocab)[0].known
 
-    if(!speakerKnows)
+    if(!speakerKnows) {
       return "failure_speaker"
+    }
     else {
       var receiverKnows = filter(function(x) {return x.label == referent}, receiverVocab)[0].known
       //check if referent known in vocab
 
-      return(categorical([receiverKnows, 1-receiverKnows], ["speak_success", "failure_receiver"]));
+      if(modality == "teach") {
+        return "teach_success"
+        // return thingExp
+        // return(categorical([receiverKnows, 1-receiverKnows], ["teach_success", "teach_failure"]));
+      } else {
+        return(categorical([receiverKnows, 1-receiverKnows], ["speak_success", "failure_receiver"]));
+      }
     }
   }
 }
@@ -136,7 +147,7 @@ var saveUpdates = function(speakerVocab, receiverVocab, action, target, newArray
   }
 }
 
-var utilityRecursive = function(trials, target, outcome, speakerVocab, receiverVocab, updates, appearanceNumber) {
+var utilityRecursive = function(trials, target, outcome, speakerVocab, receiverVocab, updates, appearanceNumber, estimatedLearnProb) {
   var trialArray = trials.slice()
   var utilityUpdated = utility(outcome)
   var targetIndex= _.indexOf(trialArray, target)
@@ -146,7 +157,7 @@ var utilityRecursive = function(trials, target, outcome, speakerVocab, receiverV
     return utilityUpdated + expectation(Infer({ model() {
       var nextAction = uniformDraw(actions)
       var nextOutcome = selectReferent(nextAction, target, speakerVocab, receiverVocab)
-      var nextVocab = updateVocab(receiverVocab, target, nextOutcome)
+      var nextVocab = updateVocab(receiverVocab, target, nextOutcome, estimatedLearnProb)
       utilityRecursive(trialArray, target, nextOutcome, speakerVocab, nextVocab, updates, appearanceNumber+1)
     }}))
   } else {
@@ -154,39 +165,48 @@ var utilityRecursive = function(trials, target, outcome, speakerVocab, receiverV
   }
 };
 
+var hypDiscount = function(delay) {
+  return 1.0 / (1 + 2*delay);
+};
+var expDiscount = function(delay) {
+  return Math.pow(0.5, delay); 
+};
+
+
 var sampleSpeakerPlanner = function() {
   // var receiverVocab = receiverVocab.slice()
 
-  var act = function(speakerVocab, receiverVocab, someTrials, target) {
+  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb) {
 
     // var target = someTrials[index]
     
     return Infer({ model() {
 
       var action = uniformDraw(actions);
-      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials);
+      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb);
       factor(Math.log(eu));
+      // factor(eu)
       return action;
     }});
   }
 
-  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials) {
+  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb) {
     var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
-    var util = utility(outcome)
+    var util = (utility(outcome) * expDiscount(delay))
 
     //var restOfTrials = index != 0 ? someTrials.slice(index+1): [];
     var index = _.indexOf(someTrials, target);
     var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
+    var newIndex = _.indexOf(restOfTrials, target);
+    var newDelay= delay+1
 
-
-
-    if(index == -1){
+    if(newIndex == -1){
       return util;
     } else {
       return util + expectation(Infer({ model() {
-        var updatedReceiver = updateVocab(receiverVocab, target, outcome)
-        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target))
-        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials)
+        var updatedReceiver = updateVocab(receiverVocab, target, outcome, estimatedLearnProb)
+        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay,estimatedLearnProb))
+        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb)
       }}));
     }
   }
@@ -243,13 +263,17 @@ var findWordandUpdate = function(word, vocab, changingKnownTo) {
   return vocab
 }
 
-var updateVocab = function(receiverVocab, referent, outcome) {
+var updateVocab = function(receiverVocab, referent, outcome, estimatedProb = 0) {
   var otherVocab=receiverVocab.slice()
   if(outcome=="speak_success") {
     findWordandUpdate(referent, otherVocab, 1)
   } 
   if(outcome=="failure_receiver") {
    findWordandUpdate(referent, otherVocab, 0)
+  }
+  if(outcome=="teach_success") {
+    var targExp =  _.filter(otherVocab, {label: referent})[0].exposures
+    findWordandUpdate(referent, otherVocab, Math.exp(knownProb(targExp+1, estimatedProb)))
   }
   // in all other cases, no need to alter because outcome is uninformative
   return otherVocab
@@ -296,8 +320,8 @@ map(function(x) {
   // return {learnPs}
   var estimatedProb = expectation(learnPs)
   var yourVocab = initializeVocab(myVocab, estimatedProb)
-  var vocabProb = map(function(element) {(sampleSpeaker(myVocab, yourVocab, element.label))},
-      myVocab)
+  // var vocabProb = map(function(element) {(sampleSpeaker(myVocab, yourVocab, element.label))},
+      // myVocab)
   // return vocabProb
   // var tmp = (sampleSpeaker(myVocab, yourVocab, 'wug'))
   // return {tmp}
@@ -307,19 +331,20 @@ map(function(x) {
 
                 // var updates = saveUpdates(myVocab, yourVocab, 'speak', 'toma', [], 3)
                 // return updates[0].outcome
+  // return repeat(10, function() {utility(selectReferent('speak', 'manu', myVocab, yourVocab, estimatedProb))})
+  var act = sampleSpeakerPlanner().act;
 
-var act = sampleSpeakerPlanner().act;
+  var act6 = act(myVocab, yourVocab, ["fep","fep","fep","fep", "fep","fep"], "fep", 0, estimatedProb)
+  var act3_wug = act(myVocab, yourVocab, ["wug","wug","wug"], "wug", 0, estimatedProb)
+  var act1 = act(myVocab, yourVocab, ["fep"], "fep", 0, estimatedProb)
 
-var act1 = act(myVocab, yourVocab, ["blicket", "blicket","blicket","blicket", "blicket","blicket"], "blicket")
+  return {act6, act3_wug, act1, myVocab}
 
-var act2 = act(myVocab, yourVocab, ["blicket"], "blicket")
+  // var trialPreds = mapIndexed(function(index, element) {
+    // act(myVocab, yourVocab, gameTrials.slice(index), element, 0, estimatedProb)
+  // }, gameTrials)
 
-return {act1, act2}
-
-// map(function(index) {
-//   act(myVocab, yourVocab, gameTrials, index)},
-//    _.range(gameTrials.length))
-
+  // return {trialPreds, gameTrials, myVocab, yourVocab}
 
 // return  gameTrials.map(function(currentValue, index){return index})
    // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))
