@@ -1,8 +1,6 @@
 library(rwebppl)
 library(tidyverse)
 library(ggjoy)
-library(ggplot2)
-
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 empiricalVocabs<- read.csv("empiricalVocabs.csv") %>% 
@@ -11,14 +9,17 @@ empiricalVocabs<- read.csv("empiricalVocabs.csv") %>%
          label = realLabel,
          known = performance)
 
+
 outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabs, data_var = "empiricalVocabs")
+
 outcomes %>%
-  unnest(trialPreds, gameTrials)
+  unnest(predictions, gameTrials)
 
-outcomes %>% select(-trialPreds, -gameTrials, -myVocab) 
+# smooth_prob = function(x){(0+x*65)/((0+x*65) + (30+x*65))}
+# sapply(0:10, smooth_prob, simplify = TRUE)
 
 
-    
+
 
 
 ## LearnPs analysis

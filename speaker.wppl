@@ -36,14 +36,14 @@ var vocabProb = function(vocabulary, prob) {
 
 
 
-var initializeVocab = function(trials, learnProb) {
+var initializeVocab = function(trials, learnProb, naive=1) {
   var learnedArray = []
 
   map(function(element) {
      var newWord = {
       label: element.label,
-      exposures: element.exposures,
-      known: Math.exp(knownProb(element.exposures, learnProb))
+      exposures: element.exposures*naive,
+      known: Math.exp(knownProb(element.exposures, learnProb))*naive
      };
      learnedArray.push(newWord)
   }, trials)
@@ -183,21 +183,21 @@ var sampleSpeakerPlanner = function() {
       var action = uniformDraw(actions);
       var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb);
       factor(Math.log(eu));
-      // factor(eu)
+       //factor(eu*1)
       return action;
     }});
   }
 
   var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb) {
     var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
-    var util = (utility(outcome) * expDiscount(delay))
+    var util = (utility(outcome)) // expDiscount(delay)
 
     var index = _.indexOf(someTrials, target);
     var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
-    var newIndex = _.indexOf(restOfTrials, target);
+    // var newIndex = _.indexOf(restOfTrials, target);
     var newDelay= delay + 1
     // if(any(function(x) {x==target}, restOfTrials)){
-    if(newIndex == -1){
+    if(index == -1){
       return util;
     } else {
       return util + expectation(Infer({ model() {
@@ -316,7 +316,10 @@ map(function(x) {
   var learnPs = estimateLearnProb(myVocab)
   // return {learnPs}
   var estimatedProb = expectation(learnPs)
-  var yourVocab = initializeVocab(myVocab, estimatedProb)
+  // var estimatedProb = 0
+  var yourVocab = initializeVocab(myVocab, estimatedProb, 0)
+
+
   // var vocabProb = map(function(element) {(sampleSpeaker(myVocab, yourVocab, element.label))},
       // myVocab)
   // return vocabProb
@@ -338,11 +341,27 @@ map(function(x) {
 
   // return {act3, act2, act1}
 
-  var trialPreds = mapIndexed(function(index, element) {
-    act(myVocab, yourVocab, gameTrials.slice(index), element, 0, estimatedProb)
-  }, gameTrials)
 
-  return {trialPreds, gameTrials, myVocab, act3, act1}
+  var predictingTrials = function(remainingTrials, yourVocab, startingArray) {
+    var element = remainingTrials.shift()
+    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb)
+    var action = sample(act_dist)
+    var outcome = selectReferent(action, element, myVocab, yourVocab)
+    var newVocab = updateVocab(yourVocab, element, outcome, estimatedProb)
+    // var act_dist = newVocab
+    startingArray.push(act_dist)
+    if(remainingTrials.length> 0){
+      predictingTrials(remainingTrials,newVocab,startingArray)
+    } else {return startingArray}
+
+  }
+
+  var predictions = predictingTrials(gameTrials.slice(), yourVocab, [])
+  // var predictions = predictingTrials(["wug", "wug", "wug", "wug", "wug", "wug"], yourVocab, [])
+
+
+
+  return {predictions, gameTrials, myVocab, yourVocab, act3, act1}
 
 // return  gameTrials.map(function(currentValue, index){return index})
    // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))
