@@ -12,8 +12,10 @@ empiricalVocabs<- read.csv("empiricalVocabs.csv") %>%
          known = performance)
 
 outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabs, data_var = "empiricalVocabs")
+outcomes %>%
+  unnest(trialPreds, gameTrials)
 
-
+outcomes %>% select(-trialPreds, -gameTrials, -myVocab) 
 
 
     

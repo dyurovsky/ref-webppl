@@ -85,7 +85,7 @@ var estimateLearnProb = function(vocabulary) {
 
 
 var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
-  if(modality == "point") return "point_success";
+  if(modality == "point") {return "point_success";}
 
   else {
     //get all known items from receiverVocab
@@ -178,8 +178,6 @@ var sampleSpeakerPlanner = function() {
 
   var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb) {
 
-    // var target = someTrials[index]
-    
     return Infer({ model() {
 
       var action = uniformDraw(actions);
@@ -194,18 +192,17 @@ var sampleSpeakerPlanner = function() {
     var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
     var util = (utility(outcome) * expDiscount(delay))
 
-    //var restOfTrials = index != 0 ? someTrials.slice(index+1): [];
     var index = _.indexOf(someTrials, target);
     var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
     var newIndex = _.indexOf(restOfTrials, target);
-    var newDelay= delay+1
-
+    var newDelay= delay + 1
+    // if(any(function(x) {x==target}, restOfTrials)){
     if(newIndex == -1){
       return util;
     } else {
       return util + expectation(Infer({ model() {
         var updatedReceiver = updateVocab(receiverVocab, target, outcome, estimatedLearnProb)
-        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay,estimatedLearnProb))
+        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb))
         return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb)
       }}));
     }
@@ -334,17 +331,18 @@ map(function(x) {
   // return repeat(10, function() {utility(selectReferent('speak', 'manu', myVocab, yourVocab, estimatedProb))})
   var act = sampleSpeakerPlanner().act;
 
-  var act6 = act(myVocab, yourVocab, ["fep","fep","fep","fep", "fep","fep"], "fep", 0, estimatedProb)
-  var act3_wug = act(myVocab, yourVocab, ["wug","wug","wug"], "wug", 0, estimatedProb)
-  var act1 = act(myVocab, yourVocab, ["fep"], "fep", 0, estimatedProb)
+  var act6 = act(myVocab, yourVocab, ["wug","wug","wug","wug", "wug","wug"], "wug", 0, estimatedProb)
+  var act3 = act(myVocab, yourVocab, ["wug","wug","wug"], "wug", 0, estimatedProb)
+  var act2 = act(myVocab, yourVocab, ["wug", "wug"], "wug", 0, estimatedProb)
+  var act1 = act(myVocab, yourVocab, ["wug"], "wug", 0, estimatedProb)
 
-  return {act6, act3_wug, act1, myVocab}
+  // return {act3, act2, act1}
 
-  // var trialPreds = mapIndexed(function(index, element) {
-    // act(myVocab, yourVocab, gameTrials.slice(index), element, 0, estimatedProb)
-  // }, gameTrials)
+  var trialPreds = mapIndexed(function(index, element) {
+    act(myVocab, yourVocab, gameTrials.slice(index), element, 0, estimatedProb)
+  }, gameTrials)
 
-  // return {trialPreds, gameTrials, myVocab, yourVocab}
+  return {trialPreds, gameTrials, myVocab, act3, act1}
 
 // return  gameTrials.map(function(currentValue, index){return index})
    // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))
