@@ -15,7 +15,8 @@ var utility = function(outcome) {
     teach_success: successValue - speechCost - pointCost,
     teach_failure: 0,
   };
-  return table[outcome];
+  // return table[outcome];
+  return Math.log(table[outcome]+1);
 };
 
 var unknownProb = function(times, prob) {
@@ -29,21 +30,22 @@ var knownProb = function(times, prob) {
 var vocabProb = function(vocabulary, prob) {
   var totalProb = map(function(word) {
     word.known ? knownProb(word.exposures, prob) :
-     unknownProb(word.exposures, prob)}, vocabulary)
+     unknownProb(word.exposures, prob)
+  }, vocabulary)
 
   return sum(totalProb)
 } 
 
 
 
-var initializeVocab = function(trials, learnProb, naive=1) {
+var initializeVocab = function(trials, learnProb, experienced=1) {
   var learnedArray = []
 
   map(function(element) {
      var newWord = {
       label: element.label,
-      exposures: element.exposures*naive,
-      known: Math.exp(knownProb(element.exposures, learnProb))*naive
+      exposures: element.exposures*experienced,
+      known: Math.exp(knownProb(element.exposures, learnProb))*experienced
      };
      learnedArray.push(newWord)
   }, trials)
@@ -182,15 +184,15 @@ var sampleSpeakerPlanner = function() {
 
       var action = uniformDraw(actions);
       var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb);
-      factor(Math.log(eu));
-       //factor(eu*1)
+      // factor(Math.log(eu));
+       factor(eu)
       return action;
     }});
   }
 
   var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb) {
     var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
-    var util = (utility(outcome)) // expDiscount(delay)
+    var util = (utility(outcome)) * expDiscount(delay)
 
     var index = _.indexOf(someTrials, target);
     var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
