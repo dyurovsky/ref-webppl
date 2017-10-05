@@ -1,12 +1,9 @@
-var speechCost = 0
-var pointCost = 70
-var successValue = 100
-
+var successValue= 100
 // var actions = ["speak", "point"];
 var actions = ["speak", "point", "teach"];
 
 
-var utility = function(outcome) {
+var utility = function(outcome, pointCost, speechCost) {
   var table = { 
     point_success: successValue - pointCost, 
     speak_success: successValue - speechCost,
@@ -38,14 +35,15 @@ var vocabProb = function(vocabulary, prob) {
 
 
 
-var initializeVocab = function(trials, learnProb, experienced=1) {
+var initializeVocab = function(trials, learnProb, partnerExposure, experienced=1) {
   var learnedArray = []
 
   map(function(element) {
-     var newWord = {
+    var inferredPartnerExposures = Math.floor(element.exposures*partnerExposure)
+    var newWord = {
       label: element.label,
-      exposures: element.exposures*experienced,
-      known: Math.exp(knownProb(element.exposures, learnProb))*experienced
+      exposures: inferredPartnerExposures,
+      known: inferredPartnerExposures==0 ? 0 : Math.exp(knownProb(inferredPartnerExposures, learnProb))
      };
      learnedArray.push(newWord)
   }, trials)
@@ -178,21 +176,21 @@ var expDiscount = function(delay) {
 var sampleSpeakerPlanner = function() {
   // var receiverVocab = receiverVocab.slice()
 
-  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb) {
+  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb, pointCost, speechCost) {
 
     return Infer({ model() {
 
       var action = uniformDraw(actions);
-      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb);
+      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost);
       // factor(Math.log(eu));
        factor(eu)
       return action;
     }});
   }
 
-  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb) {
+  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost) {
     var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
-    var util = (utility(outcome)) * expDiscount(delay)
+    var util = (utility(outcome, pointCost, speechCost)) * expDiscount(delay)
 
     var index = _.indexOf(someTrials, target);
     var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
@@ -204,8 +202,8 @@ var sampleSpeakerPlanner = function() {
     } else {
       return util + expectation(Infer({ model() {
         var updatedReceiver = updateVocab(receiverVocab, target, outcome, estimatedLearnProb)
-        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb))
-        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb)
+        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb, pointCost, speechCost))
+        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb, pointCost, speechCost)
       }}));
     }
   }
@@ -296,7 +294,7 @@ var wordList = ["blicket", "kreeb", "wug",  "fep",
 
 var freqList = [4, 4, 4, 2, 2, 2, 1, 1, 1];
 
-var trainingTrials = map2(function(word, freq) {return {label: word, exposures: freq} }, wordList, freqList)
+// var trainingTrials = map2(function(word, freq) {return {label: word, exposures: freq} }, wordList, freqList)
 
 var gameTrials = ["blicket","blicket","blicket", "kreeb","kreeb","kreeb", "wug","wug","wug", "fep","fep","fep", 
                         "toma","toma","toma", "dax","dax","dax", "gazzer","gazzer","gazzer", "kiv","kiv","kiv",
@@ -311,15 +309,25 @@ var ldfs = _.uniq(
   }, empiricalVocabs)
 )
 
-var ldfs_test = filter(function(subID) {return subID == 4}, ldfs)
+var ldfs_test = filter(function(subID) {return subID <= 4}, ldfs)
+
 
 map(function(x) {
   var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
+  var speechCost = myVocab[1].speechCost
+  var pointCost = myVocab[1].pointCost
+  var successValue = 100
+
+  var me = x
+  var utilityCondition = myVocab[1].condition
+
   var learnPs = estimateLearnProb(myVocab)
+  // return speechCost
   // return {learnPs}
   var estimatedProb = expectation(learnPs)
   // var estimatedProb = 0
-  var yourVocab = initializeVocab(myVocab, estimatedProb, 0)
+  var partnersExposure = myVocab[1].partnersExposure
+  var yourVocab = initializeVocab(myVocab, estimatedProb, partnersExposure)
 
 
   // var vocabProb = map(function(element) {(sampleSpeaker(myVocab, yourVocab, element.label))},
@@ -336,17 +344,17 @@ map(function(x) {
   // return repeat(10, function() {utility(selectReferent('speak', 'manu', myVocab, yourVocab, estimatedProb))})
   var act = sampleSpeakerPlanner().act;
 
-  var act6 = act(myVocab, yourVocab, ["wug","wug","wug","wug", "wug","wug"], "wug", 0, estimatedProb)
-  var act3 = act(myVocab, yourVocab, ["wug","wug","wug"], "wug", 0, estimatedProb)
-  var act2 = act(myVocab, yourVocab, ["wug", "wug"], "wug", 0, estimatedProb)
-  var act1 = act(myVocab, yourVocab, ["wug"], "wug", 0, estimatedProb)
+  // var act6 = act(myVocab, yourVocab, ["wug","wug","wug","wug", "wug","wug"], "wug", 0, estimatedProb)
+  // var act3 = act(myVocab, yourVocab, ["wug","wug","wug"], "wug", 0, estimatedProb)
+  // var act2 = act(myVocab, yourVocab, ["wug", "wug"], "wug", 0, estimatedProb)
+  // var act1 = act(myVocab, yourVocab, ["wug"], "wug", 0, estimatedProb)
 
   // return {act3, act2, act1}
 
 
   var predictingTrials = function(remainingTrials, yourVocab, startingArray) {
     var element = remainingTrials.shift()
-    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb)
+    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb, pointCost, speechCost)
     var action = sample(act_dist)
     var outcome = selectReferent(action, element, myVocab, yourVocab)
     var newVocab = updateVocab(yourVocab, element, outcome, estimatedProb)
@@ -363,7 +371,7 @@ map(function(x) {
 
 
 
-  return {predictions, gameTrials, myVocab, yourVocab, act3, act1}
+  return {predictions, gameTrials, myVocab, yourVocab, me, utilityCondition, partnersExposure, estimatedProb}
 
 // return  gameTrials.map(function(currentValue, index){return index})
    // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))
@@ -374,7 +382,7 @@ map(function(x) {
     // return vocabProb
 
   // return repeat(3,function() {selectReferent("speak", "dax", myVocab, yourVocab)})
-}, ldfs_test)
+}, ldfs)
 
 
 // // var myVocab = _.filter(empiricalVocabs, {ldf_num : 1})

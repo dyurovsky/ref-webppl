@@ -3,17 +3,45 @@ library(tidyverse)
 library(ggjoy)
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-empiricalVocabs<- read.csv("empiricalVocabs.csv") %>% 
-  select(-X, -targetObjectName) %>%
-  rename(exposures = exposureRate,
-         label = realLabel,
-         known = performance)
+empiricalVocabsConds<- read.csv("empiricalVocabsFull.csv") %>% 
+  select(-X) 
+
+t1<- proc.time()
+outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
+proc.time-t1
+
+# tmp <- empiricalVocabsConds %>%
+#   left_join(sender_game %>% distinct(ldf_num, partnersExposure, realLabel), by=c('label' = 'realLabel', 'ldf_num'))
+# hm <- tmp %>%
+#   mutate(partnersExposure=ifelse(partnersExposure=="perfect", 2, 
+#                                           ifelse(partnersExposure=="1/2", .5, as.numeric(partnersExposure))))
+
+gamePredictions <- outcomes %>%
+  unnest(predictions, gameTrials) %>%
+  cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
 
 
-outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabs, data_var = "empiricalVocabs")
+full_empirical_points <- read.csv('empirical_data/5.12_data_anon.csv') %>% select(-X)
 
-outcomes %>%
-  unnest(predictions, gameTrials)
+
+all_data_points <- full_empirical_points %>%
+  filter(ldf_num %in% gamePredictions$me) %>%
+  select(-partnersExposure) %>%
+  filter(toBeDropped != 1) %>%
+  group_by(ldf_num, exposureRate, targetObjectName) %>%
+  mutate(appearance = if_else(trialnum == min(trialnum), 1,
+                              if_else(trialnum == max(trialnum), 3, 2))) %>%
+  left_join(gamePredictions, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance'))
+
+
+tmp <- read.csv("5.12_with_theoretical.csv") %>% select(-X)
+
+
+
+empiricalData <- outcomes %>%
+  unnest(myVocab)
+
+
 
 # smooth_prob = function(x){(0+x*65)/((0+x*65) + (30+x*65))}
 # sapply(0:10, smooth_prob, simplify = TRUE)
