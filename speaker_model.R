@@ -29,9 +29,85 @@ proc.time-t1
 
 tmp <- read.csv("5.12_with_theoretical.csv") %>% select(-X)
 
+seprop <- function(props) {
+  mean_prop = mean(props)
+  sqrt( (mean_prop*(1 - mean_prop)) / length(props))
+}
+
+##getting empirical data for plot 1
+prop_methods_perfect <- tmp %>%
+  filter(toBeDropped != 1) %>%
+  filter(partnersExposure == 0) %>%
+  filter(appearance == 1) %>%
+  group_by(condition, ldf_num, method) %>%
+  # group_by(condition, ldf_num, method, appearance) %>%
+  summarise(n = n()) %>%
+  group_by(condition, ldf_num) %>%
+  # group_by(condition, ldf_num, appearance) %>%
+  mutate(n = n/sum(n)) %>%
+  mutate(method = as.factor(method)) %>%
+  complete( method, ldf_num, fill = list(n = 0)) %>%
+  group_by(condition, method) %>%
+  # group_by(condition, method, appearance) %>%
+  summarise(mean = mean(n), se = seprop(n), n = n()) %>%
+  ungroup() %>%
+  mutate(method = factor(method, levels = c("click", "label", "label_click")))
+
+#getting theoretical data for plot 1
+theo_methods_perfect <- tmp %>%
+  filter(toBeDropped != 1) %>%
+  filter(partnersExposure == 0) %>%
+  filter(appearance == 1) %>%
+    group_by(condition, ldf_num, method) %>%
+  summarise(mean_prob_speech = mean(speak),
+            mean_prob_point = mean(point),
+            mean_prob_teach = mean(teach)) %>%
+  group_by(condition, ldf_num) %>%
+  # mutate(n = n/sum(n)) %>%
+  group_by(condition) %>%
+  # group_by(condition, method, appearance) %>%
+  summarise(mean_speech = mean(mean_prob_speech),
+            se_speech = seprop(mean_prob_speech),
+            mean_point = mean(mean_prob_point),
+            se_point = seprop(mean_prob_point),
+            mean_teach = mean(mean_prob_teach),
+            se_teach = seprop(mean_prob_teach)) %>%
+  ungroup() %>%
+  gather(method, mean, -condition, -se_point, -se_speech, -se_teach) %>%
+  mutate(se=ifelse(grepl('speech', method), se_speech, 
+                   ifelse(grepl('point', method), se_point, se_teach)))
+
+#plot one
+prop_methods_perfect %>%
+  ggplot(aes(x=condition, y=mean)) +
+  geom_line(aes(x=condition, y=mean, group=method, color=method), position=position_dodge(.5)) +
+  geom_pointrange(aes(ymax = mean + se, 
+                     ymin = mean - se, color=method), position=position_dodge(.5)) +
+  # facet_grid(partnersExposure ~ condition) +
+  labs(y="Proportion of Trials", x="Point Scheme Condition") +
+  # scale_fill_brewer(name = "Message Type", 
+  #                   labels=c("Click", "Label", "Teach"),
+  #                   palette = "Set1")+
+  coord_cartesian(ylim=c(0,1)) +
+  # geom_ribbon(data=theo_methods_perfect, aes(x=condition, y=mean, group=method), position=position_dodge(.5), linetype='dashed') +
+  geom_ribbon(data=theo_methods_perfect,  aes(x=as.numeric(condition),ymax = mean + se, 
+                      ymin = mean - se, fill=method, alpha=.5), position=position_dodge(.5))
 
 
 
+#direct plot of model fit
+theo_methods_perfect <- tmp %>%
+  filter(toBeDropped != 1) %>%
+  filter(partnersExposure == 0.5) %>%
+  group_by(condition, ldf_num, method) %>%
+  # group_by(condition, ldf_num, method, appearance) %>%
+  summarise(n = n(),
+            ) %>%
+  group_by(condition, ldf_num) %>%
+  # group_by(condition, ldf_num, appearance) %>%
+  mutate(n = n/sum(n)) %>%
+  mutate(method = as.factor(method)) %>%
+  complete( method, ldf_num, fill = list(n = 0))
 
 
 
