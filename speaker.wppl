@@ -44,6 +44,9 @@ var initializeVocab = function(trials, learnProb, partnerExposure, experienced=1
       label: element.label,
       exposures: inferredPartnerExposures,
       known: inferredPartnerExposures==0 ? 0 : Math.exp(knownProb(inferredPartnerExposures, learnProb))
+      // use below line to initialize a partner with perfect knowledge in the 'twice as much' exposure condition
+      // known: inferredPartnerExposures==0 ? 0 : partnerExposure==2 ? 1 : Math.exp(knownProb(inferredPartnerExposures, learnProb))
+
      };
      learnedArray.push(newWord)
   }, trials)
@@ -100,8 +103,6 @@ var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
 
       if(modality == "teach") {
         return "teach_success"
-        // return thingExp
-        // return(categorical([receiverKnows, 1-receiverKnows], ["teach_success", "teach_failure"]));
       } else {
         return(categorical([receiverKnows, 1-receiverKnows], ["speak_success", "failure_receiver"]));
       }
@@ -147,23 +148,23 @@ var saveUpdates = function(speakerVocab, receiverVocab, action, target, newArray
   }
 }
 
-var utilityRecursive = function(trials, target, outcome, speakerVocab, receiverVocab, updates, appearanceNumber, estimatedLearnProb) {
-  var trialArray = trials.slice()
-  var utilityUpdated = utility(outcome)
-  var targetIndex= _.indexOf(trialArray, target)
-  trialArray.splice(targetIndex, 1)
+// var utilityRecursive = function(trials, target, outcome, speakerVocab, receiverVocab, updates, appearanceNumber, estimatedLearnProb) {
+//   var trialArray = trials.slice()
+//   var utilityUpdated = utility(outcome)
+//   var targetIndex= _.indexOf(trialArray, target)
+//   trialArray.splice(targetIndex, 1)
   
-  if(_.indexOf(trialArray, target)>=0){
-    return utilityUpdated + expectation(Infer({ model() {
-      var nextAction = uniformDraw(actions)
-      var nextOutcome = selectReferent(nextAction, target, speakerVocab, receiverVocab)
-      var nextVocab = updateVocab(receiverVocab, target, nextOutcome, estimatedLearnProb)
-      utilityRecursive(trialArray, target, nextOutcome, speakerVocab, nextVocab, updates, appearanceNumber+1)
-    }}))
-  } else {
-    return  utilityUpdated
-  }
-};
+//   if(_.indexOf(trialArray, target)>=0){
+//     return utilityUpdated + expectation(Infer({ model() {
+//       var nextAction = uniformDraw(actions)
+//       var nextOutcome = selectReferent(nextAction, target, speakerVocab, receiverVocab)
+//       var nextVocab = updateVocab(receiverVocab, target, nextOutcome, estimatedLearnProb)
+//       utilityRecursive(trialArray, target, nextOutcome, speakerVocab, nextVocab, updates, appearanceNumber+1)
+//     }}))
+//   } else {
+//     return  utilityUpdated
+//   }
+// };
 
 var hypDiscount = function(delay) {
   return 1.0 / (1 + 2*delay);
@@ -270,6 +271,7 @@ var updateVocab = function(receiverVocab, referent, outcome, estimatedProb = 0) 
   }
   if(outcome=="teach_success") {
     var targExp =  _.filter(otherVocab, {label: referent})[0].exposures
+    // can set this update to 1, perfect knowledge, to reflect assumption that teaching is perfect
     findWordandUpdate(referent, otherVocab, Math.exp(knownProb(targExp+1, estimatedProb)))
   }
   // in all other cases, no need to alter because outcome is uninformative
@@ -359,7 +361,7 @@ map(function(x) {
     var outcome = selectReferent(action, element, myVocab, yourVocab)
     var newVocab = updateVocab(yourVocab, element, outcome, estimatedProb)
     // var act_dist = newVocab
-    startingArray.push(act_dist)
+    startingArray.push(action)
     if(remainingTrials.length> 0){
       predictingTrials(remainingTrials,newVocab,startingArray)
     } else {return startingArray}

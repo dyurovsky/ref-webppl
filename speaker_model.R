@@ -6,28 +6,34 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 empiricalVocabsConds<- read.csv("empiricalVocabsFull.csv") %>% 
   select(-X) 
 
-t1<- proc.time()
-outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
-proc.time-t1
+# this line runs webppl model
+# outcomes_perfect_learner<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
 
-
-# gamePredictions <- outcomes %>%
+# these 
+# gamePredictions_perfect_learner <- outcomes_perfect_learner %>%
 #   unnest(predictions, gameTrials) %>%
 #   cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
+#  
+# full_empirical_points_init_perfect <- read.csv('empirical_data/5.12_data_anon.csv') %>% select(-X)
 # 
-# full_empirical_points <- read.csv('empirical_data/5.12_data_anon.csv') %>% select(-X)
-# 
-# all_data_points <- full_empirical_points %>%
-#   filter(ldf_num %in% gamePredictions$me) %>%
+# all_data_init_perfect <- full_empirical_points_init_perfect %>%
+#   filter(ldf_num %in% gamePredictions_perfect_learner$me) %>%
 #   select(-partnersExposure) %>%
 #   filter(toBeDropped != 1) %>%
 #   group_by(ldf_num, exposureRate, targetObjectName) %>%
 #   mutate(appearance = if_else(trialnum == min(trialnum), 1,
 #                               if_else(trialnum == max(trialnum), 3, 2))) %>%
-#   left_join(gamePredictions, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance'))
+#   left_join(gamePredictions_perfect_learner, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance')) %>%
+#   rename(predictions_perfect_learner=predictions)
 
 
-tmp <- read.csv("5.12_with_theoretical.csv") %>% select(-X)
+# hm <- cbind(all_data_coinflip, all_data_perfect_learner$predictions_perfect_learner)
+
+
+# tmp <- read.csv("5.12_with_theoretical.csv") %>% select(-X)
+tmp <- all_data_points
+# all_data_coinflip <- all_data_points
+# outcomes_coinflip<-outcomes
 
 seprop <- function(props) {
   mean_prop = mean(props)
@@ -35,79 +41,52 @@ seprop <- function(props) {
 }
 
 ##getting empirical data for plot 1
-prop_methods_perfect <- tmp %>%
+quartz()
+prop_methods <- all_data_init_perfect %>%
   filter(toBeDropped != 1) %>%
   filter(partnersExposure == 0) %>%
-  filter(appearance == 1) %>%
-  group_by(condition, ldf_num, method) %>%
-  # group_by(condition, ldf_num, method, appearance) %>%
+  # group_by(condition, ldf_num, method) %>%
+  mutate(predictions_perfect_learner=ifelse(predictions_perfect_learner=='point', "click", 
+                            ifelse(predictions_perfect_learner=="speak","label", "label_click")))  %>%
+  ungroup() %>%
+  select(condition,ldf_num,appearance,method,predictions_perfect_learner) %>%
+  gather(isEmpirical, method, -condition, -ldf_num, -appearance) %>%
+  group_by(condition, ldf_num, appearance,isEmpirical, method) %>%
   summarise(n = n()) %>%
-  group_by(condition, ldf_num) %>%
-  # group_by(condition, ldf_num, appearance) %>%
+  group_by(condition, ldf_num, isEmpirical, appearance) %>%
   mutate(n = n/sum(n)) %>%
+  ungroup() %>%
   mutate(method = as.factor(method)) %>%
-  complete( method, ldf_num, fill = list(n = 0)) %>%
-  group_by(condition, method) %>%
+  complete(nesting(condition, ldf_num), isEmpirical, appearance, method, fill = list(n = 0)) %>%
+  group_by(condition, method, isEmpirical, appearance) %>%
   # group_by(condition, method, appearance) %>%
-  summarise(mean = mean(n), se = seprop(n), n = n()) %>%
-  ungroup() %>%
-  mutate(method = factor(method, levels = c("click", "label", "label_click")))
+  summarise(mean = mean(n), se = seprop(n), n = n())
+  # ungroup() %>%
+  # mutate(method = factor(method, levels = c("click", "label", "label_click")))
 
-#getting theoretical data for plot 1
-theo_methods_perfect <- tmp %>%
-  filter(toBeDropped != 1) %>%
-  filter(partnersExposure == 0) %>%
-  filter(appearance == 1) %>%
-    group_by(condition, ldf_num, method) %>%
-  summarise(mean_prob_speech = mean(speak),
-            mean_prob_point = mean(point),
-            mean_prob_teach = mean(teach)) %>%
-  group_by(condition, ldf_num) %>%
-  # mutate(n = n/sum(n)) %>%
-  group_by(condition) %>%
-  # group_by(condition, method, appearance) %>%
-  summarise(mean_speech = mean(mean_prob_speech),
-            se_speech = seprop(mean_prob_speech),
-            mean_point = mean(mean_prob_point),
-            se_point = seprop(mean_prob_point),
-            mean_teach = mean(mean_prob_teach),
-            se_teach = seprop(mean_prob_teach)) %>%
-  ungroup() %>%
-  gather(method, mean, -condition, -se_point, -se_speech, -se_teach) %>%
-  mutate(se=ifelse(grepl('speech', method), se_speech, 
-                   ifelse(grepl('point', method), se_point, se_teach)))
 
-#plot one
-prop_methods_perfect %>%
-  ggplot(aes(x=condition, y=mean)) +
-  geom_line(aes(x=condition, y=mean, group=method, color=method), position=position_dodge(.5)) +
+
+#plot of method choice as a function of appearance, split across point conditions
+prop_methods %>% filter(isEmpirical=="method") %>%
+  ggplot(aes(x=appearance, y=mean)) +
+  geom_line(aes(x=appearance, y=mean, group=method, color=method), position=position_dodge(.25)) +
   geom_pointrange(aes(ymax = mean + se, 
-                     ymin = mean - se, color=method), position=position_dodge(.5)) +
+                     ymin = mean - se, color=method), position=position_dodge(.25)) +
   # facet_grid(partnersExposure ~ condition) +
   labs(y="Proportion of Trials", x="Point Scheme Condition") +
-  # scale_fill_brewer(name = "Message Type", 
-  #                   labels=c("Click", "Label", "Teach"),
-  #                   palette = "Set1")+
   coord_cartesian(ylim=c(0,1)) +
   # geom_ribbon(data=theo_methods_perfect, aes(x=condition, y=mean, group=method), position=position_dodge(.5), linetype='dashed') +
-  geom_ribbon(data=theo_methods_perfect,  aes(x=as.numeric(condition),ymax = mean + se, 
-                      ymin = mean - se, fill=method, alpha=.5), position=position_dodge(.5))
+  geom_ribbon(data=(prop_methods %>% filter(isEmpirical=="predictions_perfect_learner")),
+              aes(x=as.numeric(appearance),ymax = mean + se, 
+                      ymin = mean - se, fill=method, alpha=.4), position=position_dodge(.25)) +
+  facet_wrap(~condition)
 
 
 
 #direct plot of model fit
-theo_methods_perfect <- tmp %>%
-  filter(toBeDropped != 1) %>%
-  filter(partnersExposure == 0.5) %>%
-  group_by(condition, ldf_num, method) %>%
-  # group_by(condition, ldf_num, method, appearance) %>%
-  summarise(n = n(),
-            ) %>%
-  group_by(condition, ldf_num) %>%
-  # group_by(condition, ldf_num, appearance) %>%
-  mutate(n = n/sum(n)) %>%
-  mutate(method = as.factor(method)) %>%
-  complete( method, ldf_num, fill = list(n = 0))
+#
+#
+#
 
 
 
@@ -223,5 +202,30 @@ outcomes <- webppl(program_file = "speaker.wppl") %>%
   rowid_to_column(var = "sample") 
 
 hist(outcomes$speak)
+
+
+#getting theoretical data for plot 1
+# theo_methods_perfect <- tmp %>%
+#   filter(toBeDropped != 1) %>%
+#   filter(partnersExposure == 0) %>%
+#   filter(appearance == 1) %>%
+#     group_by(condition, ldf_num, method) %>%
+#   summarise(mean_prob_speech = mean(speak),
+#             mean_prob_point = mean(point),
+#             mean_prob_teach = mean(teach)) %>%
+#   group_by(condition, ldf_num) %>%
+#   # mutate(n = n/sum(n)) %>%
+#   group_by(condition) %>%
+#   # group_by(condition, method, appearance) %>%
+#   summarise(mean_speech = mean(mean_prob_speech),
+#             se_speech = seprop(mean_prob_speech),
+#             mean_point = mean(mean_prob_point),
+#             se_point = seprop(mean_prob_point),
+#             mean_teach = mean(mean_prob_teach),
+#             se_teach = seprop(mean_prob_teach)) %>%
+#   ungroup() %>%
+#   gather(method, mean, -condition, -se_point, -se_speech, -se_teach) %>%
+#   mutate(se=ifelse(grepl('speech', method), se_speech, 
+#                    ifelse(grepl('point', method), se_point, se_teach)))
 
 

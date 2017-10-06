@@ -1,0 +1,122 @@
+---
+title: "Speaker WebPPL Model"
+author: "Ben Morris and Dan Yurovsky"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    highlight: tango
+    theme: flatly
+    toc: true
+    toc_float:
+      collapsed: true
+    code_folding: hide
+---
+
+
+Setup
+```{r, include=FALSE}
+knitr::opts_chunk$set(fig.align='center', echo=FALSE, messages=FALSE, warning = FALSE,
+                      fig.height = 3, fig.width=5)
+
+#Load packages + setup
+library(rwebppl)
+library(tidyverse)
+library(ggjoy)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+```
+
+Run Model (or read in saved copy below)
+```{r}
+# ###read in empirical data to feed model
+# empiricalVocabsConds<- read.csv("empiricalVocabsFull.csv") %>%
+#   select(-X)
+# ### this line runs webppl model
+# outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
+# 
+# ### clean up data from model
+# gamePredictions <- outcomes %>%
+#   unnest(predictions, gameTrials) %>%
+#   cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
+```
+
+Read In and Join Empirical Data
+```{r}
+# ###full empirical dataset
+# full_empirical <- read.csv('empirical_data/5.12_data_anon.csv') %>% select(-X)
+# 
+# ###join empirical data and model predictions
+# all_data <- full_empirical %>%
+#   filter(ldf_num %in% gamePredictions$me) %>%
+#   select(-partnersExposure) %>%
+#   filter(toBeDropped != 1) %>%
+#   group_by(ldf_num, exposureRate, targetObjectName) %>%
+#   mutate(appearance = if_else(trialnum == min(trialnum), 1,
+#                               if_else(trialnum == max(trialnum), 3, 2))) %>%
+#   left_join(gamePredictions, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance')) %>%
+#   mutate(predictions=ifelse(predictions=='point', "click",
+#                             ifelse(predictions=="speak","label", "label_click"))) %>%
+#   as.data.frame(.)
+
+```
+
+
+Or read in model predictions from saved copy
+```{r}
+###read in model data from csv
+all_data <- read.csv("5.12_with_theoretical.csv") %>% select(-X)
+```
+
+
+Plot 1: Method Choice as a function of Appearance, split by Utility Condition
+```{r}
+seprop <- function(props) {
+  mean_prop = mean(props)
+  sqrt( (mean_prop*(1 - mean_prop)) / length(props))
+}
+
+###wrangling data for plot 1
+prop_methods <- all_data %>%
+  filter(toBeDropped != 1) %>%
+  filter(partnersExposure == 0) %>%
+  ungroup() %>%
+  select(condition,ldf_num,appearance,method,predictions) %>%
+  gather(isEmpirical, method, -condition, -ldf_num, -appearance) %>%
+  group_by(condition, ldf_num, appearance,isEmpirical, method) %>%
+  summarise(n = n()) %>%
+  group_by(condition, ldf_num, isEmpirical, appearance) %>%
+  mutate(n = n/sum(n)) %>%
+  ungroup() %>%
+  mutate(method = as.factor(method)) %>%
+  complete(nesting(condition, ldf_num), isEmpirical, appearance, method, fill = list(n = 0)) %>%
+  group_by(condition, method, isEmpirical, appearance) %>%
+  summarise(mean = mean(n), se = seprop(n))
+
+
+###plot of method choice as a function of appearance, split across point conditions
+prop_methods %>% filter(isEmpirical=="method") %>%
+  ggplot(aes(x=appearance, y=mean)) +
+  geom_line(aes(x=appearance, y=mean, group=method, color=method), position=position_dodge(.25)) +
+  geom_pointrange(aes(ymax = mean + se, 
+                     ymin = mean - se, color=method), position=position_dodge(.25)) +
+  # facet_grid(partnersExposure ~ condition) +
+  labs(y="Proportion of Trials", x="Point Scheme Condition") +
+  coord_cartesian(ylim=c(0,1)) +
+  geom_ribbon(data=(prop_methods %>% filter(isEmpirical=="predictions")),
+              aes(x=as.numeric(appearance),ymax = mean + se, 
+                      ymin = mean - se, fill=method, alpha=.4), position=position_dodge(.25)) +
+  facet_wrap(~condition)
+```
+
+
+To-Do: Make Linear Plot of Model Predictions vs. Empirical Data
+```{r}
+#direct plot of model fit
+#
+#
+#
+```
+
+
+
+
