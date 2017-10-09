@@ -35,7 +35,7 @@ var vocabProb = function(vocabulary, prob) {
 
 
 
-var initializeVocab = function(trials, learnProb, partnerExposure, experienced=1) {
+var initializeVocab = function(trials, learnProb, partnerExposure, truePerfect=0) {
   var learnedArray = []
 
   map(function(element) {
@@ -43,9 +43,12 @@ var initializeVocab = function(trials, learnProb, partnerExposure, experienced=1
     var newWord = {
       label: element.label,
       exposures: inferredPartnerExposures,
-      known: inferredPartnerExposures==0 ? 0 : Math.exp(knownProb(inferredPartnerExposures, learnProb))
+      // known: inferredPartnerExposures==0 ? 0 : Math.exp(knownProb(inferredPartnerExposures, learnProb))
       // use below line to initialize a partner with perfect knowledge in the 'twice as much' exposure condition
-      // known: inferredPartnerExposures==0 ? 0 : partnerExposure==2 ? 1 : Math.exp(knownProb(inferredPartnerExposures, learnProb))
+      known: inferredPartnerExposures==0 ? 0 : 
+        partnerExposure==.5 ? Math.exp(knownProb(inferredPartnerExposures, learnProb)) :
+          partnerExposure==2 ? truePerfect==1 ? 1 : Math.exp(knownProb(inferredPartnerExposures, learnProb)) :
+            null
 
      };
      learnedArray.push(newWord)
@@ -177,19 +180,19 @@ var expDiscount = function(delay) {
 var sampleSpeakerPlanner = function() {
   // var receiverVocab = receiverVocab.slice()
 
-  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb, pointCost, speechCost) {
+  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb, pointCost, speechCost, perfectTeaching) {
 
     return Infer({ model() {
 
       var action = uniformDraw(actions);
-      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost);
+      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost, perfectTeaching);
       // factor(Math.log(eu));
        factor(eu)
       return action;
     }});
   }
 
-  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost) {
+  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost, perfectTeaching) {
     var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
     var util = (utility(outcome, pointCost, speechCost)) * expDiscount(delay)
 
@@ -202,9 +205,9 @@ var sampleSpeakerPlanner = function() {
       return util;
     } else {
       return util + expectation(Infer({ model() {
-        var updatedReceiver = updateVocab(receiverVocab, target, outcome, estimatedLearnProb)
-        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb, pointCost, speechCost))
-        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb, pointCost, speechCost)
+        var updatedReceiver = updateVocab(receiverVocab, target, outcome, estimatedLearnProb, perfectTeaching)
+        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb, pointCost, speechCost, perfectTeaching))
+        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb, pointCost, speechCost, perfectTeaching)
       }}));
     }
   }
@@ -261,7 +264,7 @@ var findWordandUpdate = function(word, vocab, changingKnownTo) {
   return vocab
 }
 
-var updateVocab = function(receiverVocab, referent, outcome, estimatedProb = 0) {
+var updateVocab = function(receiverVocab, referent, outcome, estimatedProb = 0, perfectTeaching=0) {
   var otherVocab=receiverVocab.slice()
   if(outcome=="speak_success") {
     findWordandUpdate(referent, otherVocab, 1)
@@ -272,7 +275,8 @@ var updateVocab = function(receiverVocab, referent, outcome, estimatedProb = 0) 
   if(outcome=="teach_success") {
     var targExp =  _.filter(otherVocab, {label: referent})[0].exposures
     // can set this update to 1, perfect knowledge, to reflect assumption that teaching is perfect
-    findWordandUpdate(referent, otherVocab, Math.exp(knownProb(targExp+1, estimatedProb)))
+    perfectTeaching!=0 ? findWordandUpdate(referent, otherVocab, 1) :
+      findWordandUpdate(referent, otherVocab, Math.exp(knownProb(targExp+1, estimatedProb)))
   }
   // in all other cases, no need to alter because outcome is uninformative
   return otherVocab
@@ -311,7 +315,7 @@ var ldfs = _.uniq(
   }, empiricalVocabs)
 )
 
-var ldfs_test = filter(function(subID) {return subID <= 4}, ldfs)
+var ldfs_test = filter(function(subID) {return subID == 1}, ldfs)
 
 
 map(function(x) {
@@ -354,16 +358,16 @@ map(function(x) {
   // return {act3, act2, act1}
 
 
-  var predictingTrials = function(remainingTrials, yourVocab, startingArray) {
+  var predictingTrials = function(remainingTrials, yourVocab, startingArray, perfectTeaching=0) {
     var element = remainingTrials.shift()
-    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb, pointCost, speechCost)
+    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb, pointCost, speechCost, perfectTeaching)
     var action = sample(act_dist)
     var outcome = selectReferent(action, element, myVocab, yourVocab)
-    var newVocab = updateVocab(yourVocab, element, outcome, estimatedProb)
+    var newVocab = updateVocab(yourVocab, element, outcome, estimatedProb, perfectTeaching) 
     // var act_dist = newVocab
     startingArray.push(action)
     if(remainingTrials.length> 0){
-      predictingTrials(remainingTrials,newVocab,startingArray)
+      predictingTrials(remainingTrials,newVocab,startingArray, perfectTeaching)
     } else {return startingArray}
 
   }
@@ -371,9 +375,12 @@ map(function(x) {
   var predictions = predictingTrials(gameTrials.slice(), yourVocab, [])
   // var predictions = predictingTrials(["wug", "wug", "wug", "wug", "wug", "wug"], yourVocab, [])
 
+  var pred_perf_teaching = predictingTrials(gameTrials.slice(), yourVocab, [], 1)
 
+  var yourVocab_perf = initializeVocab(myVocab, estimatedProb, partnersExposure, 1)
+  var pred_perf_partner = predictingTrials(gameTrials.slice(), yourVocab_perf, [], 1)
 
-  return {predictions, gameTrials, myVocab, yourVocab, me, utilityCondition, partnersExposure, estimatedProb}
+  return {predictions, pred_perf_teaching, pred_perf_partner, gameTrials, myVocab, yourVocab, me, utilityCondition, partnersExposure, estimatedProb}
 
 // return  gameTrials.map(function(currentValue, index){return index})
    // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))

@@ -28,21 +28,31 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
 Run Model (or read in saved copy below)
 ```{r}
-# ###read in empirical data to feed model
+library(RCurl)
+full_implicit <- read.csv(text =getURL("https://rawgit.com/benjamincmorris/reference-game/master/turk/2017.5.9_sender_full/5.9_data_anon.csv"))
+
+
+
+##read in empirical data to feed model
 # empiricalVocabsConds<- read.csv("empiricalVocabsFull.csv") %>%
 #   select(-X)
 # ### this line runs webppl model
+# t1 <- proc.time()
 # outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
+# proc.time() - t1
 # 
 # ### clean up data from model
 # gamePredictions <- outcomes %>%
-#   unnest(predictions, gameTrials) %>%
+#   unnest(predictions, pred_perf_teaching, pred_perf_partner, gameTrials) %>%
 #   cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
+
+
+
 ```
 
 Read In and Join Empirical Data
 ```{r}
-# ###full empirical dataset
+###full empirical dataset
 # full_empirical <- read.csv('empirical_data/5.12_data_anon.csv') %>% select(-X)
 # 
 # ###join empirical data and model predictions
@@ -54,8 +64,8 @@ Read In and Join Empirical Data
 #   mutate(appearance = if_else(trialnum == min(trialnum), 1,
 #                               if_else(trialnum == max(trialnum), 3, 2))) %>%
 #   left_join(gamePredictions, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance')) %>%
-#   mutate(predictions=ifelse(predictions=='point', "click",
-#                             ifelse(predictions=="speak","label", "label_click"))) %>%
+#   mutate(method=ifelse(method=='click', "point",
+#                         ifelse(method=="label","speak", "teach"))) %>%
 #   as.data.frame(.)
 
 ```
@@ -78,23 +88,26 @@ seprop <- function(props) {
 ###wrangling data for plot 1
 prop_methods <- all_data %>%
   filter(toBeDropped != 1) %>%
-  filter(partnersExposure == 0) %>%
+  # filter(partnersExposure == 0) %>%
   ungroup() %>%
-  select(condition,ldf_num,appearance,method,predictions) %>%
-  gather(isEmpirical, method, -condition, -ldf_num, -appearance) %>%
-  group_by(condition, ldf_num, appearance,isEmpirical, method) %>%
+  select(condition,ldf_num, partnersExposure, appearance,method,predictions, pred_perf_partner, pred_perf_teaching) %>%
+  gather(isEmpirical, method, -condition, -partnersExposure, -ldf_num, -appearance) %>%
+  group_by(condition, ldf_num,partnersExposure, appearance,isEmpirical, method) %>%
   summarise(n = n()) %>%
-  group_by(condition, ldf_num, isEmpirical, appearance) %>%
+  group_by(condition, ldf_num,partnersExposure, isEmpirical, appearance) %>%
   mutate(n = n/sum(n)) %>%
   ungroup() %>%
   mutate(method = as.factor(method)) %>%
-  complete(nesting(condition, ldf_num), isEmpirical, appearance, method, fill = list(n = 0)) %>%
-  group_by(condition, method, isEmpirical, appearance) %>%
+  complete(nesting(condition, ldf_num, partnersExposure), isEmpirical, appearance, method, fill = list(n = 0)) %>%
+  group_by(condition, partnersExposure, method, isEmpirical, appearance) %>%
   summarise(mean = mean(n), se = seprop(n))
 
 
 ###plot of method choice as a function of appearance, split across point conditions
-prop_methods %>% filter(isEmpirical=="method") %>%
+to_be_plotted <- prop_methods %>% 
+  filter(partnersExposure==2)
+
+to_be_plotted %>% filter(isEmpirical=='method') %>%
   ggplot(aes(x=appearance, y=mean)) +
   geom_line(aes(x=appearance, y=mean, group=method, color=method), position=position_dodge(.25)) +
   geom_pointrange(aes(ymax = mean + se, 
@@ -102,19 +115,43 @@ prop_methods %>% filter(isEmpirical=="method") %>%
   # facet_grid(partnersExposure ~ condition) +
   labs(y="Proportion of Trials", x="Point Scheme Condition") +
   coord_cartesian(ylim=c(0,1)) +
-  geom_ribbon(data=(prop_methods %>% filter(isEmpirical=="predictions")),
+  geom_ribbon(data=(to_be_plotted %>% filter(isEmpirical=="pred_perf_teaching")),
               aes(x=as.numeric(appearance),ymax = mean + se, 
                       ymin = mean - se, fill=method, alpha=.4), position=position_dodge(.25)) +
-  facet_wrap(~condition)
+  facet_wrap(~condition) +
+  theme_bw()
 ```
 
 
 To-Do: Make Linear Plot of Model Predictions vs. Empirical Data
 ```{r}
-#direct plot of model fit
-#
-#
-#
+prop_methods_perf_teach <- prop_methods %>%
+  filter(isEmpirical=='pred_perf_teaching')
+
+
+
+
+###direct plot of model fit
+model_fit <- prop_methods %>%
+  ungroup() %>%
+  mutate(isEmpirical= ifelse(isEmpirical=='method', 'empirical', isEmpirical)) %>%
+  unite(mean_new, mean, se) %>%
+  spread(isEmpirical, mean_new) %>% 
+  separate(empirical, c('mean_emp', 'se_emp'), '_') %>%
+  separate(predictions, c('mean_pred', 'se_pred'), '_') %>%
+  separate(pred_perf_teaching, c('mean_pred_teach', 'se_pred_teach'), '_') %>%
+  separate(pred_perf_partner, c('mean_pred_partner', 'se_pred_partner'), '_') %>%
+  mutate_if(grepl('_', names(.)), as.numeric)
+
+model_fit %>%
+  ggplot(aes(x=mean_pred_teach, y=mean_emp)) +
+  geom_point() +
+  geom_abline(intercept =0, slope=1) +
+  geom_pointrange(aes(ymax = mean_emp + se_emp, 
+                     ymin = mean_emp - se_emp, color=method, linetype=as.factor(appearance)),
+                  position=position_dodge(.25))+
+  coord_cartesian(xlim=c(0,1), ylim=c(0,1))
+
 ```
 
 
