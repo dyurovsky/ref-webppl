@@ -13,7 +13,7 @@ var utility = function(outcome, pointCost, speechCost) {
     teach_failure: 0,
   };
   // return table[outcome];
-  return Math.log(table[outcome]+1);
+  return Math.log(table[outcome]+.01);
 };
 
 var unknownProb = function(times, prob) {
@@ -187,7 +187,7 @@ var sampleSpeakerPlanner = function() {
       var action = uniformDraw(actions);
       var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost, perfectTeaching);
       // factor(Math.log(eu));
-       factor(eu)
+       factor(2*eu)
       return action;
     }});
   }
@@ -315,7 +315,7 @@ var ldfs = _.uniq(
   }, empiricalVocabs)
 )
 
-var ldfs_test = filter(function(subID) {return subID == 1}, ldfs)
+var ldfs_test = filter(function(subID) {return subID <= 3}, ldfs)
 
 
 map(function(x) {
@@ -372,15 +372,15 @@ map(function(x) {
 
   }
 
-  var predictions = predictingTrials(gameTrials.slice(), yourVocab, [])
+  // var predictions = predictingTrials(gameTrials.slice(), yourVocab, [])
   // var predictions = predictingTrials(["wug", "wug", "wug", "wug", "wug", "wug"], yourVocab, [])
 
   var pred_perf_teaching = predictingTrials(gameTrials.slice(), yourVocab, [], 1)
 
-  var yourVocab_perf = initializeVocab(myVocab, estimatedProb, partnersExposure, 1)
-  var pred_perf_partner = predictingTrials(gameTrials.slice(), yourVocab_perf, [], 1)
+  // var yourVocab_perf = initializeVocab(myVocab, estimatedProb, partnersExposure, 1)
+  // var pred_perf_partner = predictingTrials(gameTrials.slice(), yourVocab_perf, [], 1)
 
-  return {predictions, pred_perf_teaching, pred_perf_partner, gameTrials, myVocab, yourVocab, me, utilityCondition, partnersExposure, estimatedProb}
+  return {pred_perf_teaching, gameTrials, myVocab, yourVocab, me, utilityCondition, partnersExposure, estimatedProb}
 
 // return  gameTrials.map(function(currentValue, index){return index})
    // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))
