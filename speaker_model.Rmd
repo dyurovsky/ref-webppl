@@ -18,15 +18,16 @@ Setup
 knitr::opts_chunk$set(fig.align='center', echo=FALSE, messages=FALSE, warning = FALSE,
                       fig.height = 3, fig.width=5)
 
-theme_set(theme_bw(base_size = 14) + theme(panel.grid = element_blank(),
-                  strip.background = element_blank()))
-
 #Load packages + setup
 library(rwebppl)
 library(tidyverse)
 library(ggjoy)
+library(directlabels)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+theme_set(theme_bw(base_size = 14) + theme(panel.grid = element_blank(),
+                  strip.background = element_blank()))
 ```
 
 Run Model (or read in saved copy below)
@@ -92,7 +93,7 @@ seprop <- function(props) {
 }
 
 
-modality.colors <- c(speak = "#e8250b", point = "#1f11e0", teach ="#fc8702", speech = "#e8250b", gesture = "#1f11e0", both ="#fc8702")
+modality.colors <- c(speak = "#e8250b", point = "#1f11e0", teach ="#54a832", speech = "#e8250b", gesture = "#1f11e0", both ="#54a832")
 
 
 
@@ -116,24 +117,23 @@ prop_methods_exposures <- all_data %>%
 prop_methods_exposures %>% 
   ungroup() %>%
   filter(method!='teach') %>%
-  filter(partnersExposure==2) %>%
+  filter(partnersExposure==.5) %>%
   mutate(condition=factor(condition,labels=c('Talk is Cheap', 'Talk is Less Cheap'))) %>%
   mutate(exposureRate=as.factor(exposureRate))%>%
-  mutate(exposureRate=factor(exposureRate, levels=c(4,2,1))) %>%
   ggplot(aes(x=exposureRate, y=mean)) +
-  geom_point(aes(color=method),size=2.25,position=position_dodge(.25)) +
-  geom_line(aes(x=(exposureRate), y=mean, group=interaction(method,condition), color=method),  size=1, position=position_dodge(.25)) +
+  geom_point(aes(color=method),size=1.5,position=position_dodge(.25)) +
+  geom_line(aes(x=(exposureRate), y=mean, group=interaction(method,condition), color=method),  size=.9, position=position_dodge(.25)) +
   geom_linerange(aes(ymax = mean + se,
     ymin = mean - se, color=method), position=position_dodge(.25)) +
   # facet_grid(partnersExposure ~ condition) +
-  labs(y="Proportion of Trials", x="Exposure Rate") +
+  labs(y="Proportion of Trials", x="Exposure Rate during Training") +
   coord_cartesian(ylim=c(0,1)) +
   facet_wrap(~condition) +
   # scale_alpha(range = c(0.4, 0.8)) +
   theme_bw() +
   scale_color_manual(values=modality.colors,
                      name = "Modality", 
-                    labels=c("Gesture", "Speak")) 
+                    labels=c("Gesture", "Speech")) 
 
 
 ###plot of method choice as a function of appearance, split across point conditions
@@ -165,12 +165,12 @@ prop_methods_exposures %>%
 Teaching Plot Across Conditions
 ```{r}
 ###wrangling data for teaching
-prop_methods <- all_data %>%
+prop_methods_teaching <- all_data %>%
   filter(toBeDropped != 1) %>%
   # filter(partnersExposure == 0) %>%
   ungroup() %>%
-  # select(condition,ldf_num, partnersExposure, appearance,method,predictions, pred_perf_partner, pred_perf_teaching) %>%
-  select(condition,ldf_num, partnersExposure, appearance,method) %>%
+  select(condition,ldf_num, partnersExposure, appearance,method,predictions, pred_perf_partner, pred_perf_teaching) %>%
+  # select(condition,ldf_num, partnersExposure, appearance,method) %>%
   gather(isEmpirical, method, -condition, -partnersExposure, -ldf_num, -appearance) %>%
   group_by(condition, ldf_num,partnersExposure, appearance,isEmpirical, method) %>%
   summarise(n = n()) %>%
@@ -182,20 +182,21 @@ prop_methods <- all_data %>%
   group_by(condition, partnersExposure, method, isEmpirical, appearance) %>%
   summarise(mean = mean(n), se = seprop(n))
 
-prop_methods %>%
+prop_methods_teaching %>%
   filter(method=='teach', isEmpirical=='method', condition=="100_30") %>%
   ungroup() %>%
   mutate(partnersExposure=factor(partnersExposure, labels=c('None', 'Half', 'Twice'))) %>%
-  mutate(appearance=as.factor(appearance)) %>%
+  mutate(appearance=factor(appearance, labels=c('First','Second', 'Third'))) %>%
   ggplot(aes(x=appearance, y=mean, label=partnersExposure)) +
   geom_point(aes(x=appearance, y=mean, color=partnersExposure), size=2.25, position=position_dodge(.25)) +
   geom_line(aes(x=appearance, y=mean, group=partnersExposure, color=partnersExposure), size=1, position=position_dodge(.25)) +
   geom_linerange(aes(ymax = mean + se,
     ymin = mean - se, color=partnersExposure), position=position_dodge(.25)) +
   # facet_grid(partnersExposure ~ condition) +
-  labs(y="Teaching Trials (Proportion)", x="Object Appearance #") +
-  coord_cartesian(ylim=c(0,1)) +
-  geom_dl(aes(label = partnersExposure, color=partnersExposure), method=list("first.qp", hjust=c(1.05, 1.45, 1.5), cex = .9)) +
+  labs(y="Proportion of Teaching Trials", x="Object Instance during Game") +
+  coord_cartesian(ylim=c(0,.6)) +
+  geom_dl(aes(label = partnersExposure, color=partnersExposure), method=list("first.qp", hjust=c(.95, 1.45, 1.55), cex = .9)) +
+  scale_color_manual(values=c("#87d868", "#54a832", "#2c6d12"), name=NULL, labels=NULL) 
   scale_color_manual(values=c("#87d868", "#54a832", "#2c6d12"), name = "Partner's Exposure", 
                     labels=c("None", "Half as Much", "Twice as Much")) 
   # geom_ribbon(data=(to_be_plotted %>% filter(isEmpirical=="pred_perf_teaching")),
@@ -239,7 +240,7 @@ prop_methods_exposures %>%
     ymin = mean - se, color=partnersExposure), position=position_dodge(.25)) +
   # facet_grid(partnersExposure ~ condition) +
   labs(y="Teaching Trials (Proportion)", x="Exposure Rate") +
-  coord_cartesian(ylim=c(0,1)) +
+  coord_cartesian(ylim=c(0,.75)) +
   geom_dl(aes(label = partnersExposure, color=partnersExposure), method=list("first.qp", hjust=c(1.05, 1.45, 1.5), cex = .9)) +
   scale_color_manual(values=c("#87d868", "#54a832", "#2c6d12"), name = "Partner's Exposure", 
                     labels=c("None", "Half as Much", "Twice as Much")) 
@@ -255,10 +256,22 @@ prop_methods_exposures %>%
 
 To-Do: Make Linear Plot of Model Predictions vs. Empirical Data
 ```{r}
-prop_methods_perf_teach <- prop_methods %>%
-  filter(isEmpirical=='pred_perf_teaching')
-
-
+prop_methods <- all_data %>%
+  filter(toBeDropped != 1) %>%
+  # filter(partnersExposure == 0) %>%
+  ungroup() %>%
+  select(condition,ldf_num, partnersExposure, appearance,method,predictions, pred_perf_partner, pred_perf_teaching) %>%
+  # select(condition,ldf_num, partnersExposure, appearance,method) %>%
+  gather(isEmpirical, method, -condition, -partnersExposure, -ldf_num, -appearance) %>%
+  group_by(condition, ldf_num,partnersExposure, appearance,isEmpirical, method) %>%
+  summarise(n = n()) %>%
+  group_by(condition, ldf_num,partnersExposure, isEmpirical, appearance) %>%
+  mutate(n = n/sum(n)) %>%
+  ungroup() %>%
+  mutate(method = as.factor(method)) %>%
+  tidyr::complete(nesting(condition, ldf_num, partnersExposure), isEmpirical, appearance, method, fill = list(n = 0)) %>%
+  group_by(condition, partnersExposure, method, isEmpirical, appearance) %>%
+  summarise(mean = mean(n), se = seprop(n))
 
 
 ###direct plot of model fit
@@ -285,19 +298,28 @@ ggplot(residuals, aes(x =as.factor(partnersExposure), y = residual, color = meth
   geom_point()
 
 model_fit %>%
-  ggplot(aes(x=mean_pred_teach, y=mean_emp, color=method, shape=as.factor(condition),
+  rename(mean_pred_plot=mean_pred_partner,
+         se_pred_plot=se_pred_partner) %>%
+  ggplot(aes(x=mean_pred_plot, y=mean_emp, color=method, shape=as.factor(partnersExposure),
              label = appearance)) +
+  geom_point(size=2) +
   geom_abline(intercept =0, slope=1) +
-  # geom_linerange(aes(ymax = mean_emp + se_emp, 
-  #                    ymin = mean_emp - se_emp),
-  #                 position=position_dodge(.25)) + 
-  # geom_errorbarh(aes(xmin = mean_pred_teach - se_pred_teach,
-  #                    xmax = mean_pred_teach + se_pred_teach),
-  #                 position=position_dodge(.25),
-  #                alpha = .5)+
-  geom_label() +
+  geom_linerange(aes(ymax = mean_emp + se_emp,
+                     ymin = mean_emp - se_emp),
+                  position=position_dodge(.25),
+                 alpha=.4) +
+  geom_errorbarh(aes(xmin = mean_pred_plot - se_pred_plot,
+                     xmax = mean_pred_plot + se_pred_plot),
+                  position=position_dodge(.25),
+                 alpha = .4)+
+  # geom_label() +
   #geom_point() + 
-  coord_cartesian(xlim=c(0,1), ylim=c(0,1))
+  coord_cartesian(xlim=c(0,.8), ylim=c(0,.8)) + 
+  labs(y="Empirical Proportion of Trials", x="Model Predictions") +
+  scale_color_manual(values=modality.colors, name='Modality', labels=c("Gesture", "Speech", "Teach")) +
+  scale_shape_manual(values=c(15,17,8),name="Partner's Exposure", labels=c("None", "Half as Much", "Twice as Much")) 
+
+
 
 
 model_fit %>%
@@ -309,57 +331,39 @@ model_fit %>%
 
 ```{r}
 # tmp <- getURL("https://raw.githubusercontent.com/dyurovsky/gesture/master/feathers/coded_responses.feather")
+library(feather)
 corpus_data <- read_feather('~/Downloads/coded_responses.feather')
 
-corpus_methods <- corpus_data %>%
-  group_by(subj,person,age, modality) %>%
+
+# loaded_subjs<-read_feather('feathers/coded_responses.feather')
+
+modality_data <- corpus_data %>%
+  group_by(person, age, subj, freq_cut, rank, freq, referent, modality, chat) %>%
   summarise(n = n()) %>%
-  group_by(subj,person,age) %>%
-  mutate(n = n/sum(n)) %>%
-  ungroup() %>%
-  mutate(method = as.factor(modality)) %>%
-  # tidyr::complete(nesting(subj, age), person, method, fill = list(n = 0)) %>%
-  group_by(age,person, method) %>%
-  summarise(mean = mean(n), se = seprop(n))
+  spread(modality, n, fill = 0)
 
 
-###plot of method choice as a function of appearance, split across point conditions
-corpus_plot <- corpus_data %>%
-  filter(person=='parent') %>% 
-      select(age,freq_cut, subj, modality, referent) %>%
-  group_by(age,freq_cut, subj, modality, referent) %>%
-  summarise(n = n()) %>%
-  ungroup() %>%
-  mutate(modality=as.factor(modality)) %>%
-  tidyr::complete(nesting(age,freq_cut,referent, subj), modality, fill = list(n = 0)) %>%
-  group_by(age, freq_cut, subj, referent) %>%
-  mutate(n = n/sum(n)) %>%
-  group_by(age, freq_cut,  modality,  subj) %>%
-  summarise(n = mean(n)) %>%
-  summarise(mean = mean(n), se= seprop(n))
+plot_data <- modality_data %>%
+  group_by(person, age, subj, freq, referent) %>%
+  gather(modality, n, both, gesture, speech) %>%
+  mutate(prop = n/sum(n)) %>%
+  filter(modality == "both")
 
-
-corpus_plot$freq_cut_interp <- factor(corpus_plot$freq_cut, levels(corpus_plot$freq_cut), labels=c('Most Rare', 'Rare-ish', 'Freq-ish', 'Most Frequent'))
-corpus_plot$freq_cut_interp <- factor(corpus_plot$freq_cut_interp, levels=c( 'Most Frequent','Freq-ish', 'Rare-ish','Most Rare'))
-
-
-corpus_plot %>%
-  filter(age==14|age==22) %>%
-  ungroup() %>%
-  filter(modality=='both') %>%
-  mutate(age=as.factor(age))%>%
-  mutate(age=factor(age, labels=c('14 mo', '22 mo'))) %>%
-  ggplot(aes(x=freq_cut_interp, y=mean, group=age)) +
-  geom_point(aes(color=age), size=3.25, position=position_dodge(.25)) +
-  geom_line(aes(x=freq_cut_interp, y=mean,  color=age), size=1.25,  position=position_dodge(.25)) +
-  geom_linerange(aes(ymax = mean + se,
-    ymin = mean - se, color=age),position=position_dodge(.25)) +
-  labs(y="Proportion of References \n using Gesture + Speech", x=NULL) +
-  # coord_cartesian(ylim=c(0,1)) +
+ggplot(plot_data, aes(x = log(freq), y = prop, 
+                      color = as.factor(age),
+                      fill = as.factor(age),
+                      label = as.factor(age))) + 
+  geom_smooth(method = "loess") + 
+  # geom_dl(method = list("first.qp", vjust=c(10.75, 10.5, 9.75, 7.75),hjust=1.05, cex = .8)) +
+  # geom_dl(method = list("first.qp", vjust=c(17.5, 17, 14.75, 8),hjust=1.15, cex = .8)) +
+  labs(y="Proportion of References\nusing Gesture + Speech", x='Referent Frequency (logged)') +
+  coord_cartesian(ylim=c(0,.4)) +
   # facet_grid(.~age) +
   theme_bw()+
-  theme(axis.text.x = element_text(angle = 25, hjust = 1)) +
-  scale_color_manual(values=c("#87d868", "#54a832", "#2c6d12"))
+  scale_fill_manual(values=c("#87d868", "#54a832", "#2c6d12", "#000000"), name='Age of their Child', labels=c('14 months', '18 months','22 months','26 months')) +
+  scale_color_manual(values=c("#87d868", "#54a832", "#2c6d12", "#000000"), name='Age of their Child', labels=c('14 months', '18 months','22 months','26 months')) 
+
+
 ```
 
 
