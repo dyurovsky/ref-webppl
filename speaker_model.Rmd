@@ -41,7 +41,7 @@ all_data_dropped <- full_implicit %>% filter(toBeDropped==0)
 tmp <- all_data_dropped %>% group_by(speed, method) %>%
   filter(duration<15000) %>%
   filter(responseCorrect==1) %>%
-  mutate(hyp_score= ceiling(11-(duration*2/1000))*10) %>%
+  mutate(hyp_score= ceiling(11-(duration*1.7/1000))*10) %>%
   summarize(medDur = median(duration), sdDur = sd(duration),
             meanScore=mean(score), n =n(), avgCorr = mean(responseCorrect),
             meanHypScore = mean(hyp_score)) 
@@ -65,7 +65,7 @@ tmp %>%
 empiricalImplicitVocabs <- full_implicit %>%
   group_by(ldf_num, speed, partnersExposure, realLabel, exposureRate) %>%
   summarize(testCorrect=first(testCorrect)) %>%
-  left_join(implicit_points) %>%
+  left_join(implicit_points %>% filter(type=='meanScore')) %>%
   rename(condition = speed,
          exposures=exposureRate,
          label_points=label,
@@ -78,7 +78,9 @@ empiricalImplicitVocabs <- full_implicit %>%
          condition=as.factor(condition))  %>%
   as.data.frame()
   
- 
+
+library(lme4)
+
  
  
 # ##read in empirical data to feed model
@@ -88,12 +90,12 @@ empiricalImplicitVocabs <- full_implicit %>%
 t1 <- proc.time()
 # outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
 # outcomes_implicit<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
-outcomes_implicit_luce4<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
+outcomes_implicit_luce2<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
 
 proc.time() - t1
 # # 
 # # ### clean up data from model
-gamePredictions_luce4 <- outcomes_implicit_luce4 %>%
+gamePredictions_luce2 <- outcomes_implicit_luce2 %>%
   unnest(predictions, pred_perf_teaching, gameTrials) %>%
   unnest(pred_perf_teaching, gameTrials) %>%
     cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
@@ -103,23 +105,80 @@ gamePredictions_luce4 <- outcomes_implicit_luce4 %>%
 ```
 
 
+
+```{r}
+indiv_timings <- all_data_dropped %>% group_by(speed, method) %>%
+  filter(duration<15000) %>%
+  filter(responseCorrect==1) %>%
+  ungroup() %>%
+  mutate(method = factor(method, levels = c("label", "click", "label_click")))
+
+
+group_effects <- distinct(indiv_timings, method, speed) %>%
+  mutate(group = predict(indiv_model, newdata = ., re.form = NA))
+
+indiv_effects <- ranef(indiv_model) %>%
+  as_data_frame() %>%
+  spread(term, condval) %>%
+  mutate(label =  `(Intercept)`,
+         click = label + methodclick,
+         label_click = label + methodlabel_click) %>%
+  select(grp, label, click, label_click) %>%
+  rename(ldf_num = grp) %>%
+  mutate(ldf_num = as.numeric(as.character(ldf_num))) %>%
+  left_join(distinct(indiv_timings, ldf_num, speed)) %>%
+  arrange(ldf_num) %>%
+  gather(method, indiv, label, click, label_click) %>%
+  left_join(group_effects) %>%
+  mutate(predicted = exp(indiv + group),
+         utility = ceiling(11-(predicted/1000))*10)
+
+
+indiv_predicted <-  all_data_dropped %>%
+
+  as_data_frame() %>%
+  left_join(indiv_effects)
+
+
+
+
+
+
+
+indiv_model <- lmer(log(duration) ~  speed*method + (method|ldf_num), data = indiv_timings)
+
+
+ggplot(indiv_predicted, aes(x = predicted, y = duration)) + 
+  geom_point() + 
+  geom_smooth()
+```
+
 ### Read In and Join Empirical Data
 ```{r}
 ###full empirical dataset
 # full_empirical <- read.csv('empirical_data/5.12_data_anon.csv') %>% select(-X)
 # 
 # ###join empirical data and model predictions
-all_data_luce4 <- full_implicit %>%
-  filter(ldf_num %in% gamePredictions_luce4$me) %>%
+all_data_luce2 <- full_implicit %>%
+  filter(ldf_num %in% gamePredictions_luce2$me) %>%
   select(-partnersExposure) %>%
   filter(toBeDropped != 1) %>%
   group_by(ldf_num, exposureRate, targetObjectName) %>%
   mutate(appearance = if_else(trialnum == min(trialnum), 1,
                               if_else(trialnum == max(trialnum), 3, 2))) %>%
-  left_join(gamePredictions_luce4, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance')) %>%
+  left_join(gamePredictions_luce2, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance')) %>%
   mutate(method=ifelse(method=='click', "point",
                         ifelse(method=="label","speak", "teach"))) %>%
   as.data.frame(.)
+
+
+seprop <- function(props) {
+  mean_prop = mean(props)
+  sqrt( (mean_prop*(1 - mean_prop)) / length(props))
+}
+
+
+modality.colors <- c(speak = "#e8250b", point = "#1f11e0", teach ="#54a832", speech = "#e8250b", gesture = "#1f11e0", both ="#54a832")
 
 ```
 
@@ -135,13 +194,7 @@ all_data <- read.csv("5.12_three_models.csv") %>% select(-X)
 
 #Plot 1: Method Choice as a function of Appearance, split by Utility Condition
 ```{r}
-seprop <- function(props) {
-  mean_prop = mean(props)
-  sqrt( (mean_prop*(1 - mean_prop)) / length(props))
-}
 
-
-modality.colors <- c(speak = "#e8250b", point = "#1f11e0", teach ="#54a832", speech = "#e8250b", gesture = "#1f11e0", both ="#54a832")
 
 
 
@@ -310,11 +363,9 @@ prop_methods_exposures %>%
 
 
 
-
-
 #Plot of Model Predictions vs. Empirical Data
 ```{r}
-prop_methods_luce4 <- all_data_luce4 %>%
+prop_methods_luce2 <- all_data_luce2 %>%
   filter(toBeDropped != 1) %>%
   rename(condition=speed) %>%
   # filter(partnersExposure == 0) %>%
@@ -334,7 +385,7 @@ prop_methods_luce4 <- all_data_luce4 %>%
 
 
 ###direct plot of model fit
-model_fit <- prop_methods_luce4 %>%
+model_fit <- prop_methods_luce2 %>%
   ungroup() %>%
   mutate(isEmpirical= ifelse(isEmpirical=='method', 'empirical', isEmpirical)) %>%
   unite(mean_new, mean, se) %>%
