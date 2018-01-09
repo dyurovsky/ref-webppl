@@ -189,6 +189,7 @@ modality.colors <- c(speak = "#e8250b", point = "#1f11e0", teach ="#54a832", spe
 all_data <- read.csv("5.12_three_models.csv") %>% select(-X)
 # all_data <- read.csv("fixed_teach_cost.csv") %>% select(-X)
 
+
 ```
 
 
@@ -488,4 +489,24 @@ ggplot(plot_data, aes(x = log(freq), y = prop,
 
 
 
+```{r}
+
+###plot of method choice as a function of appearance, split across point conditions
+to_be_plotted <- prop_methods %>%
+  filter(condition=="100_30")
+
+to_be_plotted %>% filter(isEmpirical=='method') %>%
+  ggplot(aes(x=appearance, y=mean)) +
+  geom_line(aes(x=appearance, y=mean, group=method, color=method), position=position_dodge(.25)) +
+  geom_pointrange(aes(ymax = mean + se, 
+                     ymin = mean - se, color=method), position=position_dodge(.25)) +
+  # facet_grid(partnersExposure ~ condition) +
+  labs(y="Proportion of Trials", x="Point Scheme Condition") +
+  coord_cartesian(ylim=c(0,1)) +
+  geom_ribbon(data=(to_be_plotted %>% filter(isEmpirical=="pred_perf_teaching")),
+              aes(x=as.numeric(appearance),ymax = mean + se, 
+                      ymin = mean - se, fill=method, alpha=.4), position=position_dodge(.25)) +
+  facet_wrap(~partnersExposure) +
+  theme_bw()
+```
 
