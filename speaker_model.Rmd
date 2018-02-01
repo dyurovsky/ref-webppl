@@ -113,6 +113,7 @@ indiv_timings <- all_data_dropped %>% group_by(speed, method) %>%
   ungroup() %>%
   mutate(method = factor(method, levels = c("label", "click", "label_click")))
 
+indiv_model <- lmer(log(duration) ~  speed*method + (method|ldf_num), data = indiv_timings)
 
 group_effects <- distinct(indiv_timings, method, speed) %>%
   mutate(group = predict(indiv_model, newdata = ., re.form = NA))
@@ -145,7 +146,6 @@ indiv_predicted <-  all_data_dropped %>%
 
 
 
-indiv_model <- lmer(log(duration) ~  speed*method + (method|ldf_num), data = indiv_timings)
 
 
 ggplot(indiv_predicted, aes(x = predicted, y = duration)) + 
@@ -366,9 +366,9 @@ prop_methods_exposures %>%
 
 #Plot of Model Predictions vs. Empirical Data
 ```{r}
-prop_methods_luce2 <- all_data_luce2 %>%
+prop_methods <- all_data %>%
   filter(toBeDropped != 1) %>%
-  rename(condition=speed) %>%
+  # rename(condition=speed) %>%
   # filter(partnersExposure == 0) %>%
   ungroup() %>%
   select(condition,ldf_num, partnersExposure, appearance,method,predictions,  pred_perf_teaching) %>%
@@ -386,7 +386,7 @@ prop_methods_luce2 <- all_data_luce2 %>%
 
 
 ###direct plot of model fit
-model_fit <- prop_methods_luce2 %>%
+model_fit <- prop_methods %>%
   ungroup() %>%
   mutate(isEmpirical= ifelse(isEmpirical=='method', 'empirical', isEmpirical)) %>%
   unite(mean_new, mean, se) %>%
@@ -411,8 +411,8 @@ ggplot(residuals, aes(x =as.factor(partnersExposure), y = residual, color = meth
 
 #plot of model predictions vs empirical game data
 model_fit %>%
-  rename(mean_pred_plot=mean_pred_teach,
-         se_pred_plot=se_pred_teach) %>%
+  rename(mean_pred_plot=mean_pred,
+         se_pred_plot=se_pred) %>%
   ggplot(aes(x=mean_pred_plot, y=mean_emp, color=method, shape=as.factor(partnersExposure),
              label = appearance)) +
   geom_point(size=2) +
