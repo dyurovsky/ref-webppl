@@ -62,7 +62,7 @@ tmp %>%
   theme_bw()
 #100_30 would translate to about 65 speed
 
-empiricalImplicitVocabs <- full_implicit %>%
+empiricalImplicitVocabs <- all_data_dropped %>%
   group_by(ldf_num, speed, partnersExposure, realLabel, exposureRate) %>%
   summarize(testCorrect=first(testCorrect)) %>%
   left_join(implicit_points %>% filter(type=='meanScore')) %>%
@@ -70,6 +70,7 @@ empiricalImplicitVocabs <- full_implicit %>%
          exposures=exposureRate,
          label_points=label,
          click_points= click,
+         teach_points = label_click,
          label= realLabel) %>%
   ungroup() %>%
   mutate(known = ifelse(testCorrect == 1, TRUE, FALSE),
@@ -90,12 +91,12 @@ library(lme4)
 t1 <- proc.time()
 # outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
 # outcomes_implicit<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
-outcomes_implicit_luce2<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
+outcomes_implicit_jan<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
 
 proc.time() - t1
 # # 
 # # ### clean up data from model
-gamePredictions_luce2 <- outcomes_implicit_luce2 %>%
+gamePredictions_luce2 <- outcomes_implicit_jan %>%
   unnest(predictions, pred_perf_teaching, gameTrials) %>%
   unnest(pred_perf_teaching, gameTrials) %>%
     cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
@@ -159,7 +160,10 @@ ggplot(indiv_predicted, aes(x = predicted, y = duration)) +
 # full_empirical <- read.csv('empirical_data/5.12_data_anon.csv') %>% select(-X)
 # 
 # ###join empirical data and model predictions
-all_data_luce2 <- full_implicit %>%
+# all_data_luce2 <- full_implicit %>%
+#   filter(ldf_num %in% gamePredictions_luce2$me) %>%
+  
+all_data_model <- all_data_dropped %>%
   filter(ldf_num %in% gamePredictions_luce2$me) %>%
   select(-partnersExposure) %>%
   filter(toBeDropped != 1) %>%
@@ -200,8 +204,9 @@ all_data <- read.csv("5.12_three_models.csv") %>% select(-X)
 
 
 ###wrangling data for plots by exposure
-prop_methods_exposures <- all_data %>%
+prop_methods_exposures <- all_data_model %>%
   filter(toBeDropped != 1) %>%
+  rename(condition=speed) %>%
   # filter(partnersExposure == 0) %>%
   ungroup() %>%
   select(condition,ldf_num, partnersExposure, exposureRate,method, pred_perf_teaching) %>%
@@ -216,34 +221,40 @@ prop_methods_exposures <- all_data %>%
   group_by(condition, partnersExposure, method, isEmpirical, exposureRate) %>%
   summarise(mean = mean(n), se = seprop(n)) %>%
   ungroup() %>%
-  mutate(condition=factor(condition,labels=c('Talk is Cheap', 'Talk is Less Cheap'))) %>%
-  mutate(exposureRate=as.factor(exposureRate)) %>%
-  filter(method!='teach') %>%
-  filter(partnersExposure==.5)
+  # mutate(condition=factor(condition,labels=c('Talk is Cheap', 'Talk is Less Cheap'))) %>%
+  mutate(exposureRate=as.factor(exposureRate),
+         partnersExposure=as.factor(partnersExposure))
+  # filter(method!='teach') %>%
+  # filter(partnersExposure==.5)
 
 prop_methods_exposures %>% 
-  filter(isEmpirical=="method") %>%
-  ggplot(aes(x=exposureRate, y=mean)) +
-  geom_point(aes(color=method),size=1.5,position=position_dodge(.25)) +
+  filter(isEmpirical=="pred_perf_teaching") %>%
+  ggplot(aes(x=exposureRate, y=mean, color=method, linetype=as.factor(condition), group=interaction(condition, method,partnersExposure))) +
+  geom_point(size=1.5,position=position_dodge(.25)) +
   ## plotting model predictions
   # geom_ribbon(data=(prop_methods_exposures %>% filter(isEmpirical=="pred_perf_teaching")),
   #   aes(x=as.numeric(exposureRate),ymax = mean + se, ymin = mean - se,
   #       fill=method, alpha=.4), position=position_dodge(.25)) +
-  geom_line(aes(x=(exposureRate), y=mean, group=interaction(method,condition), color=method),  size=.9,
+  geom_line(  size=.9,
           position=position_dodge(.25)) +
   geom_linerange(aes(ymax = mean + se,
-    ymin = mean - se, color=method), position=position_dodge(.25)) +
+    ymin = mean - se), position=position_dodge(.25)) +
   # facet_grid(partnersExposure ~ condition) +
   labs(y="Proportion of Trials", x="Exposure Rate during Training") +
   coord_cartesian(ylim=c(0,1)) +
-  facet_wrap(~condition) +
+  facet_grid(partnersExposure~.) +
   # scale_alpha(range = c(0.4, 0.8)) +
-  theme_bw() +
-  scale_color_manual(values=modality.colors,
-    name = "Modality", labels=c("Gesture", "Speech")) +
-  scale_fill_manual(values=modality.colors,
-    name = "Modality", labels=c("Gesture", "Speech"))
+  theme_bw()
+  # scale_color_manual(values=modality.colors,
+  #   name = "Modality", labels=c("Gesture", "Speech")) +
+  # scale_fill_manual(values=modality.colors,
+  #   name = "Modality", labels=c("Gesture", "Speech"))
 
+
+implicit_points %>% filter(type=='meanScore') %>% 
+  mutate(rat = (exp(label/100)/(exp(label/100)+exp(click/100)+exp(label_click/100)))) %>%
+  ungroup() %>%
+  mutate(diff = rat - lag(rat))
 
 ###plot of method choice as a function of appearance, split across point conditions
 # to_be_plotted <- prop_methods %>% 

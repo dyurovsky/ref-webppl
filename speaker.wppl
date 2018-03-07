@@ -3,13 +3,13 @@ var successValue= 100
 var actions = ["speak", "point", "teach"];
 
 // implicit points version
-var utility = function(outcome, implicit_click_points, implicit_label_points) {
+var utility = function(outcome, implicit_click_points, implicit_label_points, implicit_teach_points) {
   var table = { 
     point_success: implicit_click_points, 
     speak_success: implicit_label_points,
     failure_speaker: 0,
     failure_receiver: 0,
-    teach_success: 102,
+    teach_success: implicit_teach_points,
     teach_failure: 0,
   };
   // return table[outcome];
@@ -191,21 +191,21 @@ var expDiscount = function(delay) {
 var sampleSpeakerPlanner = function() {
   // var receiverVocab = receiverVocab.slice()
 
-  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb, pointCost, speechCost, perfectTeaching) {
+  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching) {
 
     return Infer({ model() {
 
       var action = uniformDraw(actions);
-      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost, perfectTeaching);
+      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching);
       // factor(Math.log(eu));
        factor(2*eu)
       return action;
     }});
   }
 
-  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointCost, speechCost, perfectTeaching) {
+  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching) {
     var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
-    var util = (utility(outcome, pointCost, speechCost)) * expDiscount(delay)
+    var util = (utility(outcome, pointPoints, speechPoints, teachPoints)) * expDiscount(delay)
 
     var index = _.indexOf(someTrials, target);
     var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
@@ -217,8 +217,8 @@ var sampleSpeakerPlanner = function() {
     } else {
       return util + expectation(Infer({ model() {
         var updatedReceiver = updateVocab(receiverVocab, target, outcome, estimatedLearnProb, perfectTeaching)
-        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb, pointCost, speechCost, perfectTeaching))
-        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb, pointCost, speechCost, perfectTeaching)
+        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb, pointPoints, speechPoints,teachPoints, perfectTeaching))
+        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching)
       }}));
     }
   }
@@ -333,9 +333,9 @@ map(function(x) {
   var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
   // var speechCost = myVocab[1].speechCost
   // var pointCost = myVocab[1].pointCost
-  var pointCost = myVocab[1].click_points
-  var speechCost = myVocab[1].label_points
-  var implicit_teach_points = myVocab[1].label_click
+  var pointPoints = myVocab[1].click_points
+  var speechPoints = myVocab[1].label_points
+  var teachPoints = myVocab[1].teach_points
 // return myVocab
   var successValue = 100
 
@@ -375,7 +375,7 @@ map(function(x) {
 
   var predictingTrials = function(remainingTrials, yourVocab, startingArray, perfectTeaching=0) {
     var element = remainingTrials.shift()
-    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb, pointCost, speechCost, perfectTeaching)
+    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb, pointPoints, speechPoints, teachPoints, perfectTeaching)
     var action = sample(act_dist)
     var outcome = selectReferent(action, element, myVocab, yourVocab)
     var newVocab = updateVocab(yourVocab, element, outcome, estimatedProb, perfectTeaching) 
