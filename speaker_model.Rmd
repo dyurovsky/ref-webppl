@@ -23,6 +23,7 @@ library(rwebppl)
 library(tidyverse)
 library(ggjoy)
 library(directlabels)
+library(lme4)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
@@ -80,7 +81,6 @@ empiricalImplicitVocabs <- all_data_dropped %>%
   as.data.frame()
   
 
-library(lme4)
 
  
  
@@ -91,12 +91,14 @@ library(lme4)
 t1 <- proc.time()
 # outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
 # outcomes_implicit<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
-outcomes_implicit_jan<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
+outcomes_implicit<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
+
 
 proc.time() - t1
 # # 
 # # ### clean up data from model
-gamePredictions_luce2 <- outcomes_implicit_jan %>%
+
+gamePredictions_implicit <- outcomes_implicit %>%
   unnest(predictions, pred_perf_teaching, gameTrials) %>%
   unnest(pred_perf_teaching, gameTrials) %>%
     cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
@@ -120,7 +122,7 @@ group_effects <- distinct(indiv_timings, method, speed) %>%
   mutate(group = predict(indiv_model, newdata = ., re.form = NA))
 
 indiv_effects <- ranef(indiv_model) %>%
-  as_data_frame() %>%
+  as.data.frame() %>%
   spread(term, condval) %>%
   mutate(label =  `(Intercept)`,
          click = label + methodclick,
@@ -137,8 +139,7 @@ indiv_effects <- ranef(indiv_model) %>%
 
 
 indiv_predicted <-  all_data_dropped %>%
-
-  as_data_frame() %>%
+  as.data.frame() %>%
   left_join(indiv_effects)
 
 
@@ -382,7 +383,7 @@ prop_methods <- all_data %>%
   # rename(condition=speed) %>%
   # filter(partnersExposure == 0) %>%
   ungroup() %>%
-  select(condition,ldf_num, partnersExposure, appearance,method,predictions,  pred_perf_teaching) %>%
+  select(condition,ldf_num, partnersExposure, appearance,method,predictions,  pred_perf_teaching, pred_perf_partner) %>%
   # select(condition,ldf_num, partnersExposure, appearance,method) %>%
   gather(isEmpirical, method, -condition, -partnersExposure, -ldf_num, -appearance) %>%
   group_by(condition, ldf_num,partnersExposure, appearance,isEmpirical, method) %>%
@@ -405,7 +406,7 @@ model_fit <- prop_methods %>%
   separate(empirical, c('mean_emp', 'se_emp'), '_') %>%
   separate(predictions, c('mean_pred', 'se_pred'), '_') %>%
   separate(pred_perf_teaching, c('mean_pred_teach', 'se_pred_teach'), '_') %>%
-  # separate(pred_perf_partner, c('mean_pred_partner', 'se_pred_partner'), '_') %>%
+  separate(pred_perf_partner, c('mean_pred_partner', 'se_pred_partner'), '_') %>%
   mutate_if(grepl('_', names(.)), as.numeric)
 
 

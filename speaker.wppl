@@ -198,7 +198,7 @@ var sampleSpeakerPlanner = function() {
       var action = uniformDraw(actions);
       var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching);
       // factor(Math.log(eu));
-       factor(2*eu)
+       factor(eu)
       return action;
     }});
   }
