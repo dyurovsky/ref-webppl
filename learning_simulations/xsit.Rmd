@@ -1,0 +1,56 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+VOCAB_SIZE <- 9
+PER_TRIAL <- 4
+OCCURRENCES <- 3
+
+p <- .56
+
+words <- 1:VOCAB_SIZE
+trials <- expand.grid(word = words, occurrence = 1:OCCURRENCES)
+
+# teach model
+train <- function(p) {
+  vocab <- tibble(word = words, prob = 0)
+ 
+  do_trial <- function(df) {
+    
+    target <- df$word
+    occurrence <- df$occurrence
+    
+    prob <- vocab %>% 
+      filter(word == target) %>%
+      pull(prob)
+    
+    response <- rbinom(1, 1, prob)
+    prob <- max(prob, rbinom(1, 1, p))
+
+    vocab[vocab$word==target, "prob"] <<- prob 
+    
+    tibble(word = target, response = response, prob = prob, 
+           occurrence = occurrence)
+  } 
+  
+  map_df(1:nrow(trials), ~do_trial(trials %>% slice(.x)))
+  
+}
+
+outcomes <- replicate(40, train(p), simplify = F) %>%
+  bind_rows() 
+
+
+outcomes %>%
+  group_by(occurrence) %>%
+  summarise_at(vars(response, prob), mean)
+
+```
