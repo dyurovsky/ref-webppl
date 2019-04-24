@@ -45,10 +45,12 @@ train <- function(p) {
   
 }
 
+
 outcomes <- replicate(40, train(p), simplify = F) %>%
   bind_rows() 
 
 
+#get mean learn prob by occurence
 outcomes %>%
   group_by(occurrence) %>%
   summarise_at(vars(response, prob), mean)
