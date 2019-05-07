@@ -1,8 +1,6 @@
 ---
 title: "R Notebook"
 output: html_notebook
-editor_options: 
-  chunk_output_type: inline
 ---
 
 ```{r}
@@ -54,5 +52,50 @@ outcomes <- replicate(40, train(p), simplify = F) %>%
 outcomes %>%
   group_by(occurrence) %>%
   summarise_at(vars(response, prob), mean)
+```
+
+```{r xsit}
+VOCAB_SIZE <- 9
+PER_TRIAL <- 4
+OCCURRENCES <- 3
+
+p <- .56
+
+words <- 1:VOCAB_SIZE
+
+trials <- expand.grid(word = words, occurrence = 1:OCCURRENCES) %>%
+  rowwise() %>%
+  mutate(target = word, 
+         competitors = list(sample(setdiff(words, word), PER_TRIAL)))
+
+# teach model
+train <- function(p) {
+  vocab <- expand.grid(word = words, object = words, assoc = 0) %>%
+    as_tibble()
+  
+  do_trial <- function(df) {
+    
+    word <- df$word
+    
+    objects <- c(df$target, unlist(df$competitors))
+    
+    assocs <- vocab %>% 
+      filter(word == word, object %in% objects) %>%
+      mutate(assoc = assoc + 1) %>%
+      pull(assoc)
+      
+      
+  
+    vocab[vocab$word==word && vocab$object %in% objects, "assoc"]  <<- assocs 
+    
+  } 
+  
+  map_df(1:nrow(trials), ~do_trial(trials %>% slice(.x)))
+  
+}
+
+
+outcomes <- replicate(40, train(p), simplify = F) %>%
+  bind_rows() 
 
 ```
