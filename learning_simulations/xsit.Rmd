@@ -1,10 +1,13 @@
 ---
 title: "Gesture-Speech Model Simulations"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r}
 library(tidyverse)
+library(tidyboot)
 ```
 
 ```{r}
@@ -58,18 +61,27 @@ outcomes %>%
 VOCAB_SIZE <- 9
 PER_TRIAL <- 4
 OCCURRENCES <- 3
+ENCODED_OBJS <- 3
+
+
+alpha <- 1
 
 p <- .56
 
 words <- 1:VOCAB_SIZE
 
+
 trials <- expand.grid(word = words, occurrence = 1:OCCURRENCES) %>%
   rowwise() %>%
-  mutate(target = word, 
-         competitors = list(sample(setdiff(words, word), PER_TRIAL)))
+  mutate(target = word)
+
 
 # teach model
 train <- function(p) {
+  
+  trials <- trials %>%
+    mutate(competitors = list(sample(setdiff(words, word), PER_TRIAL)))
+  
   vocab <- expand.grid(word = words, object = words, assoc = 0) %>%
     as_tibble()
   
@@ -77,7 +89,8 @@ train <- function(p) {
     
     heardWord <- df$word
 
-    objects <- c(df$target, unlist(df$competitors))
+    objects <- c(df$target, unlist(df$competitors)) %>%
+      sample(min(ENCODED_OBJS, length(.)))
 
     assocs <- vocab %>% 
       #scoping issue fixed here?
@@ -87,16 +100,34 @@ train <- function(p) {
       pull(assoc)
       
     #single &, not double && here
-    vocab[vocab$word==heardWord & vocab$object %in% objects, "assoc"]  <<- assocs 
-      
+    vocab[vocab$word==heardWord & vocab$object %in% objects, "assoc"] <<- assocs 
   } 
-  print("mapping")
-  map_df(1:nrow(trials), ~do_trial(trials %>% slice(.x)))
-  print("fini")
+  walk(1:nrow(trials), ~do_trial(trials %>% slice(.x)))
+  
+  return(vocab)
 }
 
 
-outcomes <- replicate(40, train(p), simplify = F) %>%
-  bind_rows() 
+new_vocab <- replicate(100, train(p), simplify = F) %>%
+  bind_rows(.id = "replicate")
+
+new_vocab %>%
+  mutate(sim = exp(alpha * assoc)) %>%
+  group_by(replicate, word) %>%
+  mutate(correct_sim = if_else(word == object, sim, 0)) %>%
+  summarise(sum_sim = sum(sim),
+            correct_sim = max(correct_sim)) %>%
+  mutate(prob = correct_sim / sum_sim) %>%
+  summarise(prob = mean(prob)) %>%
+  tidyboot_mean(prob)
+  
+
+
+mean_vocab <- new_vocab %>%
+  group_by(word, object) %>%
+  summarise(assoc = mean(assoc))
+
+ggplot(mean_vocab, aes(x = object, y = word, fill = assoc)) + 
+  geom_tile()
 
 ```
