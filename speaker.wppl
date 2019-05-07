@@ -1,34 +1,35 @@
 var successValue= 100
+
 // var actions = ["speak", "point"];
 var actions = ["speak", "point", "teach"];
 
 // implicit points version
-var utility = function(outcome, implicit_click_points, implicit_label_points, implicit_teach_points) {
-  var table = { 
-    point_success: implicit_click_points, 
-    speak_success: implicit_label_points,
-    failure_speaker: 0,
-    failure_receiver: 0,
-    teach_success: implicit_teach_points,
-    teach_failure: 0,
-  };
-  // return table[outcome];
-  return Math.log(table[outcome]+.01);
-};
-
-// // explicit points version of utiltiy function
-// var utility = function(outcome, pointCost, speechCost) {
+// var utility = function(outcome, implicit_click_points, implicit_label_points, implicit_teach_points) {
 //   var table = { 
-//     point_success: successValue - pointCost, 
-//     speak_success: successValue - speechCost,
+//     point_success: implicit_click_points, 
+//     speak_success: implicit_label_points,
 //     failure_speaker: 0,
 //     failure_receiver: 0,
-//     teach_success: successValue - speechCost - pointCost,
+//     teach_success: implicit_teach_points,
 //     teach_failure: 0,
 //   };
 //   // return table[outcome];
 //   return Math.log(table[outcome]+.01);
 // };
+
+// // explicit points version of utiltiy function
+var utility = function(outcome, pointCost, speechCost) {
+  var table = { 
+    point_success: successValue - pointCost, 
+    speak_success: successValue - speechCost,
+    failure_speaker: 0,
+    failure_receiver: 0,
+    teach_success: successValue - speechCost - pointCost,
+    teach_failure: 0,
+  };
+  // return table[outcome];
+  return Math.log(table[outcome]+.01);
+};
 
 var unknownProb = function(times, prob) {
   Binomial({p:prob, n:times}).score(0)
@@ -49,7 +50,7 @@ var vocabProb = function(vocabulary, prob) {
 
 
 
-var initializeVocab = function(trials, learnProb, partnerExposure, truePerfect=0) {
+var initializeVocab = function(trials, learnProb, partnerExposure) {
   var learnedArray = []
 
   map(function(element) {
@@ -60,8 +61,8 @@ var initializeVocab = function(trials, learnProb, partnerExposure, truePerfect=0
       // known: inferredPartnerExposures==0 ? 0 : Math.exp(knownProb(inferredPartnerExposures, learnProb))
       // use below line to initialize a partner with perfect knowledge in the 'twice as much' exposure condition
       known: inferredPartnerExposures==0 ? 0 : 
-        partnerExposure==.5 ? Math.exp(knownProb(inferredPartnerExposures, learnProb)) :
-          partnerExposure==2 ? truePerfect==1 ? 1 : Math.exp(knownProb(inferredPartnerExposures, learnProb)) :
+        partnerExposure==1 ? Math.exp(knownProb(inferredPartnerExposures, learnProb)) :
+          partnerExposure==2 ? Math.exp(knownProb(inferredPartnerExposures, learnProb)) :
             null
 
      };
@@ -70,10 +71,10 @@ var initializeVocab = function(trials, learnProb, partnerExposure, truePerfect=0
   return learnedArray
 }
 
-var wordFromVocab = function(word, vocabulary) {
-  var vocabIndex = _.findIndex(vocabulary, {label: word});
-  return vocabulary[vocabIndex];
-}
+// var wordFromVocab = function(word, vocabulary) {
+//   var vocabIndex = _.findIndex(vocabulary, {label: word});
+//   return vocabulary[vocabIndex];
+// }
 
 
 var training = function(trials, learnProb) {
@@ -96,7 +97,6 @@ var estimateLearnProb = function(vocabulary) {
       var parameter = sample(Beta({a:.5,b:.5}));
       factor(vocabProb(vocabulary, parameter))
 
-      //condition(sameVocabulary(vocabulary, learnSample));
       return parameter;
     }
   })
@@ -127,26 +127,26 @@ var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
   }
 }
 
-var sampleSpeaker = function(speakerVocab, receiverVocab, target) {
-  return Infer({ 
-    model() {
+// var sampleSpeaker = function(speakerVocab, receiverVocab, target) {
+//   return Infer({ 
+//     model() {
 
-      var action = uniformDraw(actions);
+//       var action = uniformDraw(actions);
       
-      var expectedUtility = function(action) {
-        return expectation(Infer({ 
-          model() {
-            return utility(selectReferent(action, target, speakerVocab, receiverVocab));
-          }
-        }));
-      };
+//       var expectedUtility = function(action) {
+//         return expectation(Infer({ 
+//           model() {
+//             return utility(selectReferent(action, target, speakerVocab, receiverVocab));
+//           }
+//         }));
+//       };
       
-      factor(Math.log(expectedUtility(action)));
+//       factor(2*expectedUtility(action));
       
-      return action
-    }
-  });
-};
+//       return action
+//     }
+//   });
+// };
 
 var saveUpdates = function(speakerVocab, receiverVocab, action, target, newArray, repeats) {
 
@@ -191,22 +191,21 @@ var expDiscount = function(delay) {
 var sampleSpeakerPlanner = function() {
   // var receiverVocab = receiverVocab.slice()
 
-  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching) {
+  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching) {
 
     return Infer({ model() {
 
       var action = uniformDraw(actions);
-      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching);
+      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching);
       // factor(Math.log(eu));
-       factor(eu)
+       factor(2*eu)
       return action;
     }});
   }
 
-  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching) {
+  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching) {
     var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
-    var util = (utility(outcome, pointPoints, speechPoints, teachPoints)) * expDiscount(delay)
-
+    var util = (utility(outcome, pointPoints, speechPoints)) * expDiscount(delay)
     var index = _.indexOf(someTrials, target);
     var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
     // var newIndex = _.indexOf(restOfTrials, target);
@@ -217,8 +216,8 @@ var sampleSpeakerPlanner = function() {
     } else {
       return util + expectation(Infer({ model() {
         var updatedReceiver = updateVocab(receiverVocab, target, outcome, estimatedLearnProb, perfectTeaching)
-        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb, pointPoints, speechPoints,teachPoints, perfectTeaching))
-        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb, pointPoints, speechPoints, teachPoints, perfectTeaching)
+        var nextAction = sample(act(speakerVocab, updatedReceiver, restOfTrials, target, newDelay, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching))
+        return expectedUtility(nextAction, target, speakerVocab, updatedReceiver, restOfTrials, newDelay, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching)
       }}));
     }
   }
@@ -275,7 +274,7 @@ var findWordandUpdate = function(word, vocab, changingKnownTo) {
   return vocab
 }
 
-var updateVocab = function(receiverVocab, referent, outcome, estimatedProb = 0, perfectTeaching=0) {
+var updateVocab = function(receiverVocab, referent, outcome, estimatedProb, perfectTeaching) {
   var otherVocab=receiverVocab.slice()
   if(outcome=="speak_success") {
     findWordandUpdate(referent, otherVocab, 1)
@@ -328,16 +327,14 @@ var ldfs = _.uniq(
 
 var ldfs_test = filter(function(subID) {return subID <= 3}, ldfs)
 
-
 map(function(x) {
   var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
   // var speechCost = myVocab[1].speechCost
   // var pointCost = myVocab[1].pointCost
-  var pointPoints = myVocab[1].click_points
-  var speechPoints = myVocab[1].label_points
-  var teachPoints = myVocab[1].teach_points
-// return myVocab
+  var pointCost = myVocab[1].pointCost
+  var speechCost =  myVocab[1].speechCost
   var successValue = 100
+
 
   var me = x
   var utilityCondition = myVocab[1].condition
@@ -373,9 +370,9 @@ map(function(x) {
   // return {act3, act2, act1}
 
 
-  var predictingTrials = function(remainingTrials, yourVocab, startingArray, perfectTeaching=0) {
+  var predictingTrials = function(remainingTrials, yourVocab, startingArray, perfectTeaching) {
     var element = remainingTrials.shift()
-    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb, pointPoints, speechPoints, teachPoints, perfectTeaching)
+    var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, estimatedProb, pointCost, speechCost, perfectTeaching)
     var action = sample(act_dist)
     var outcome = selectReferent(action, element, myVocab, yourVocab)
     var newVocab = updateVocab(yourVocab, element, outcome, estimatedProb, perfectTeaching) 
@@ -389,12 +386,12 @@ map(function(x) {
   var predictions = predictingTrials(gameTrials.slice(), yourVocab, [])
   // var predictions = predictingTrials(["wug", "wug", "wug", "wug", "wug", "wug"], yourVocab, [])
 
-  var pred_perf_teaching = predictingTrials(gameTrials.slice(), yourVocab, [], 1)
+  // var pred_perf_teaching = predictingTrials(gameTrials.slice(), yourVocab, [], 1)
 
   // var yourVocab_perf = initializeVocab(myVocab, estimatedProb, partnersExposure, 1)
   // var pred_perf_partner = predictingTrials(gameTrials.slice(), yourVocab_perf, [], 1)
 
-  return {predictions, pred_perf_teaching, gameTrials, myVocab, yourVocab, me, utilityCondition, partnersExposure, estimatedProb}
+  return {predictions, gameTrials, myVocab, yourVocab, me, utilityCondition,  partnersExposure, estimatedProb}
 
 // return  gameTrials.map(function(currentValue, index){return index})
    // return gameTrials.slice(_.indexOf(gameTrials, 'toma'))
