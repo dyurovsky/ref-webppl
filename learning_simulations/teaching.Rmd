@@ -1,0 +1,80 @@
+---
+title: "Gesture-Speech Model Simulations"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(tidyboot)
+```
+
+```{r}
+teach_learn_p <- function(p , n) {
+  1 - (1-p)^n
+}
+
+teach_min_n <- function(p, t) {
+  tibble(n = 1:1000, prob = map(1:1000, ~teach_learn_p(p, .x)) 
+         %>% unlist()) %>%
+    filter(prob >= t) %>%
+    slice(1) %>%
+    pull(n)
+}
+
+
+teach_ns <- tibble(p = seq(.25,1,.01), n = map_int(seq(.25,1,.01), 
+                                         ~teach_min_n(.x, .75)))
+
+ggplot(teach_ns, aes(x = p, y = n)) + 
+  geom_line()
+```
+
+```{r xsit}
+xsit_learn_p <- function(p, C, M, n, a = 2) {
+  exp(a * p * n) / ((M * exp((a * p * n)*(C/M))) +  exp(a * p * n))
+}
+
+xsit_min_n <- function(p, C, M, t) {
+  tibble(n = 1:1000, prob = map(1:1000, ~xsit_learn_p(p, C, M, .x)) 
+         %>% unlist()) %>%
+    filter(prob >= t) %>%
+    slice(1) %>%
+    pull(n)
+}
+
+xsit_conditions <- crossing(C = c(1, 2, 4),
+                            M = c(3, 64, 256),
+                            p = seq(.25, 1, .01)) 
+
+
+xsit_ns <- xsit_conditions %>%
+  rowwise() %>%
+  mutate(n = xsit_min_n(p, C, M, .75))
+
+  
+ns <- xsit_conditions %>%
+  left_join(teach_ns) %>%
+  mutate(type = "teach") %>%
+  bind_rows(xsit_ns %>% mutate(type = "xsit"))
+
+ggplot(ns, aes(x = p, y = n, color = type)) + 
+  facet_grid(C ~ M) +
+  geom_point()
+
+
+ggplot(xsit_ns, aes(x = p, y = n, color = as.factor(M))) + 
+  facet_grid(. ~ C) +
+  geom_point()
+
+
+ns %>%
+  spread(type, n) %>%
+  mutate(ratio = xsit - teach) %>%
+  ggplot(aes(x = p, y = ratio, color = as.factor(C))) + 
+  facet_grid(. ~ M) + 
+  geom_smooth()
+
+```
+
