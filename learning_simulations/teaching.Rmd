@@ -45,7 +45,7 @@ xsit_min_n <- function(p, C, M, t) {
 }
 
 xsit_conditions <- crossing(C = c(1, 2, 4),
-                            M = c(3, 64, 256),
+                            M = c(16, 64, 256),
                             p = seq(.25, 1, .01)) 
 
 
@@ -75,6 +75,113 @@ ns %>%
   ggplot(aes(x = p, y = ratio, color = as.factor(C))) + 
   facet_grid(. ~ M) + 
   geom_smooth()
+
+```
+
+communication
+```{r}
+discount <- function(lambda = .5, delay) {
+  lambda ^ delay
+}
+
+P <- 70
+S <- 0
+alpha <- 2
+k <- .6
+
+
+speak_u <- function(P, S, alpha, lambda, delay, k, n) {
+ utility <- 100 * teach_learn_p(k, n) - S
+ log(max(utility, 0) + .001)
+}
+
+teach_u <- function(P, S, alpha, lambda, delay, k, n) {
+  utility <- (100 - P - S)
+   log(max(utility, 0) + .001)
+}
+
+act_u <- function(P, S, alpha, lambda, delay, k, n) {
+  MAX_DELAY <- 12
+  
+  if(delay >= MAX_DELAY) {
+    expected_util <- 0
+    teach_p <- NA
+  }
+  else {
+   speak_util <- speak_u(P, S, alpha, lambda, delay, k, n) +
+     discount(lambda, delay+1) * 
+     act_u(P, S, alpha,lambda, delay + 1, k, n) %>% pull(eu)
+   teach_util <- teach_u(P, S, alpha, lambda, delay, k, n) +
+     discount(lambda, delay+1) * 
+     act_u(P, S, alpha,lambda, delay + 1, k, n + 1) %>% pull(eu)
+   
+   teach_p <- exp(alpha * teach_util) / (
+     exp(alpha * teach_util) + (exp(alpha * speak_util)))
+   
+   expected_util <- teach_p * teach_util + (1- teach_p) * speak_util
+  
+#  print(expected_util)
+  }
+   
+   tibble(delay = delay,
+          n = n,
+          eu = expected_util,
+          pteach = teach_p)
+   
+}
+
+trials <- crossing(delay = 0:12, n = 0:12) %>%
+  filter(n <= delay)
+  
+outcomes <- map_df(1:nrow(trials), 
+       ~act_u(P, S, alpha, lambda = .5, 
+              delay = slice(trials, .x) %>% pull(delay), .5, 
+              n = slice(trials, .x) %>% pull(n)))
+
+
+p_outcomes <- trials %>%
+  mutate(p_occur = 1)
+
+for(row in 2:nrow(p_outcomes)) {
+  outcome <- outcomes %>%
+    slice(row)
+  
+  last_teach_occur <- p_outcomes %>%
+    filter(delay == outcome$delay - 1,
+           n == outcome$n -1) %>%
+    pull(p_occur) %>%
+    max(.,0)
+  
+  last_teach_p <- outcomes %>%
+    filter(delay == outcome$delay - 1,
+           n == outcome$n -1) %>%
+    pull(pteach) %>%
+    max(.,0)
+
+  last_not_teach_occur <- p_outcomes %>%
+    filter(delay == outcome$delay - 1,
+           n == outcome$n) %>%
+    pull(p_occur) %>%
+    max(.,0)
+  
+  last_not_teach_p <- 1 - outcomes %>%
+    filter(delay == outcome$delay - 1,
+           n == outcome$n) %>%
+    pull(pteach) %>%
+    max(.,0) 
+  
+  p_outcomes[row, "p_occur"] <- last_not_teach_occur * last_not_teach_p + 
+    last_teach_occur *last_teach_p
+}
+
+tidy_outcomes <- left_join(outcomes, p_outcomes) %>%
+  mutate(total_teach = p_occur * n) %>%
+  group_by(delay) %>%
+  summarise(total_teach = sum(total_teach)) %>%
+  mutate(trial = delay -1)
+
+ggplot(tidy_outcomes, aes(x = delay, y = total_teach)) + 
+  geom_point()
 
 ```
 
