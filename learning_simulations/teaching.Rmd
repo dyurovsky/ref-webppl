@@ -80,7 +80,7 @@ ns %>%
 
 personalized communication
 ```{r}
-MAX_DELAY <- 3
+MAX_DELAY <- 10
 U <- 100
 
 P <- 70
@@ -132,7 +132,7 @@ act_u <- function(delay, k, n) {
       
       point_util <- point_u() + 
         discount(delay + 1) * 
-        (act_u(delay + 1, k = 0, n = 1) %>% pull(eu))
+        (act_u(delay + 1, k = 0, n = 0) %>% pull(eu))
       
       teach_util <- teach_u() + 
         discount(delay + 1) * 
@@ -149,7 +149,7 @@ act_u <- function(delay, k, n) {
        
        teach_util <- teach_u() + 
          discount(delay + 1) * 
-         (act_u(delay + 1, k = 1, n = 0) %>% pull(eu))
+         (act_u(delay + 1, k = 1, n = n + 1) %>% pull(eu))
       
     } else {
       speak_util <- (k * (speak_success_u() +
@@ -188,7 +188,7 @@ act_u <- function(delay, k, n) {
    
 }
 
-act_u(delay = 0, k = teach_outcome(4), n = 4)
+act_u(delay = 3, k = teach_outcome(3), n = 3)
 ```
 
 ```{r}
