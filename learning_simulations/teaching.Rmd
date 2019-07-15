@@ -12,7 +12,7 @@ library(tidyboot)
 
 ```{r}
 teach_learn_p <- function(p , n) {
-  1 - (1-p)^n
+  1 - (1-p) ^ n
 }
 
 teach_min_n <- function(p, t) {
@@ -78,47 +78,103 @@ ns %>%
 
 ```
 
-communication
+personalized communication
 ```{r}
-discount <- function(lambda = .5, delay) {
-  lambda ^ delay
-}
+MAX_DELAY <- 3
+U <- 100
 
 P <- 70
 S <- 0
 alpha <- 2
-k <- .6
+lambda <- .5
+p <- .6
 
 
-speak_u <- function(P, S, alpha, lambda, delay, k, n) {
- utility <- 100 * teach_learn_p(k, n) - S
- log(max(utility, 0) + .001)
+teach_outcome <- function(n = 1, p = .6) {
+  1 - (1-p) ^ n
 }
 
-teach_u <- function(P, S, alpha, lambda, delay, k, n) {
-  utility <- (100 - P - S)
-   log(max(utility, 0) + .001)
+# this can't contain ps if it's going to get logged
+speak_success_u <- function(S = 0) {
+ log(max(U - S, 0) + .001)
 }
 
-act_u <- function(P, S, alpha, lambda, delay, k, n) {
-  MAX_DELAY <- 12
+speak_fail_u <- function() {
+ log(max(0 - S, .001))
+}
+
+point_u <- function(P = 30) {
+  log(max(U - P, 0) + .001)
+}
+
+teach_u <- function(P = 30, S = 0) {
+  log(max(U - P - S, 0) + .001)
+}
+
+discount <- function(delay, lambda = .5) {
+  lambda ^ delay
+}
+
+act_u <- function(delay, k, n) {
   
-  if(delay >= MAX_DELAY) {
+  if(delay > MAX_DELAY) {
     expected_util <- 0
     teach_p <- NA
+    speak_p <- NA
   }
+  
   else {
-   speak_util <- speak_u(P, S, alpha, lambda, delay, k, n) +
-     discount(lambda, delay+1) * 
-     act_u(P, S, alpha,lambda, delay + 1, k, n) %>% pull(eu)
-   teach_util <- teach_u(P, S, alpha, lambda, delay, k, n) +
-     discount(lambda, delay+1) * 
-     act_u(P, S, alpha,lambda, delay + 1, k, n + 1) %>% pull(eu)
+    if(k == 0) {
+      
+      speak_util <- speak_fail_u() +
+        discount(delay + 1) * 
+        (act_u(delay + 1, k = 0, n = 0) %>% pull(eu))
+      
+      point_util <- point_u() + 
+        discount(delay + 1) * 
+        (act_u(delay + 1, k = 0, n = 1) %>% pull(eu))
+      
+      teach_util <- teach_u() + 
+        discount(delay + 1) * 
+        (act_u(delay + 1, teach_outcome(), n = 1) %>% pull(eu))
+      
+    } else if(k == 1) {
+       speak_util <- speak_success_u() + 
+                       discount(delay + 1) * 
+                       (act_u(delay + 1, k = 1, n = 0) %>% pull(eu))
+
+       point_util <- point_u() + 
+                       discount(delay + 1) * 
+                       (act_u(delay + 1, k = 1, n = 0) %>% pull(eu))
+       
+       teach_util <- teach_u() + 
+         discount(delay + 1) * 
+         (act_u(delay + 1, k = 1, n = 0) %>% pull(eu))
+      
+    } else {
+      speak_util <- (k * (speak_success_u() +
+                           discount(delay + 1) * 
+                           (act_u(delay + 1, k = 1, n = 0) %>% pull(eu)))) +
+        ((1-k) * (speak_fail_u() + discount(delay+1) * 
+                       (act_u(delay + 1, k = 0, n = 0) %>% pull(eu))))
+      
+      point_util <- point_u() + discount(delay + 1) * 
+         (act_u(delay + 1, k, n) %>% pull(eu))
+            
+      teach_util <- teach_u() + discount(delay + 1) * 
+         (act_u(delay + 1, teach_outcome(n + 1, p), n = n + 1) %>% pull(eu))
+    }
    
    teach_p <- exp(alpha * teach_util) / (
-     exp(alpha * teach_util) + (exp(alpha * speak_util)))
+     exp(alpha * teach_util) + (exp(alpha * speak_util) + 
+                                  (exp(alpha * point_util))))
    
-   expected_util <- teach_p * teach_util + (1- teach_p) * speak_util
+   speak_p <- exp(alpha * speak_util) / (
+     exp(alpha * speak_util) + (exp(alpha * point_util) + 
+                                  (exp(alpha * teach_util))))
+   
+   expected_util <- teach_p * teach_util + (speak_p) * speak_util +
+     (1 - speak_p - teach_p) * point_util
   
 #  print(expected_util)
   }
@@ -126,19 +182,33 @@ act_u <- function(P, S, alpha, lambda, delay, k, n) {
    tibble(delay = delay,
           n = n,
           eu = expected_util,
+          pspeak = speak_p,
+          ppoint = 1 - speak_p - teach_p,
           pteach = teach_p)
    
 }
 
-trials <- crossing(delay = 0:12, n = 0:12) %>%
-  filter(n <= delay)
-  
-outcomes <- map_df(1:nrow(trials), 
-       ~act_u(P, S, alpha, lambda = .5, 
-              delay = slice(trials, .x) %>% pull(delay), .5, 
-              n = slice(trials, .x) %>% pull(n)))
+act_u(delay = 0, k = teach_outcome(4), n = 4)
+```
+
+```{r}
+# act_u(70, 0, 1, .5, delay = 0, k = 0, p = .6,n = 0)
+# 
+# act_u(70, 0, .1, .5, delay = 1, k = .6, p = .6,n = 1)
+# 
+# 
+# trials <- crossing(delay = 0:12, n = 0:12) %>%
+#   filter(n <= delay)
+#   
+# outcomes <- map_df(1:nrow(trials), 
+#        ~act_u(P, S, alpha, lambda = .5, 
+#               delay = slice(trials, .x) %>% pull(delay), .5, 
+#               n = slice(trials, .x) %>% pull(n)))
+```
 
 
+communication in expectation
+```{r, eval = F}
 p_outcomes <- trials %>%
   mutate(p_occur = 1)
 
@@ -174,14 +244,15 @@ for(row in 2:nrow(p_outcomes)) {
     last_teach_occur *last_teach_p
 }
 
-tidy_outcomes <- left_join(outcomes, p_outcomes) %>%
-  mutate(total_teach = p_occur * n) %>%
+tidy_outcomes <- p_outcomes %>%
   group_by(delay) %>%
-  summarise(total_teach = sum(total_teach)) %>%
-  mutate(trial = delay -1)
+  mutate(teach = n * p_occur) %>%
+  summarise(teach = sum(teach)) %>%
+  rename(trial = delay) %>%
+  filter(trial >=  1)
 
-ggplot(tidy_outcomes, aes(x = delay, y = total_teach)) + 
+ggplot(tidy_outcomes, aes(x = trial, y = teach)) + 
   geom_point()
-
 ```
+
 
