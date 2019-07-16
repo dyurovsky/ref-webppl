@@ -8,6 +8,9 @@ editor_options:
 ```{r}
 library(tidyverse)
 library(tidyboot)
+
+theme_set(theme_classic(base_size = 14))
+
 ```
 
 ```{r}
@@ -15,67 +18,60 @@ teach_learn_p <- function(p , n) {
   1 - (1-p) ^ n
 }
 
-teach_min_n <- function(p, t) {
-  tibble(n = 1:1000, prob = map(1:1000, ~teach_learn_p(p, .x)) 
+teach_learn_prop <- function(p) {
+  tibble(n = 1:50, prob = map(1:50, ~teach_learn_p(p, .x)) 
          %>% unlist()) %>%
-    filter(prob >= t) %>%
-    slice(1) %>%
-    pull(n)
+    mutate(p = p)
 }
 
 
-teach_ns <- tibble(p = seq(.25,1,.01), n = map_int(seq(.25,1,.01), 
-                                         ~teach_min_n(.x, .75)))
+teach_props <- map_df(seq(.25,.75,.25), ~teach_learn_prop(.x))
 
-ggplot(teach_ns, aes(x = p, y = n)) + 
+ggplot(teach_props, aes(x = n, y = prob, color = as.factor(p))) + 
   geom_line()
 ```
 
 ```{r xsit}
-xsit_learn_p <- function(p, C, M, n, a = 2) {
-  exp(a * p * n) / ((M * exp((a * p * n)*(C/M))) +  exp(a * p * n))
-}
-
-xsit_min_n <- function(p, C, M, t) {
-  tibble(n = 1:1000, prob = map(1:1000, ~xsit_learn_p(p, C, M, .x)) 
-         %>% unlist()) %>%
-    filter(prob >= t) %>%
-    slice(1) %>%
-    pull(n)
-}
-
-xsit_conditions <- crossing(C = c(1, 2, 4),
-                            M = c(16, 64, 256),
-                            p = seq(.25, 1, .01)) 
-
-
-xsit_ns <- xsit_conditions %>%
-  rowwise() %>%
-  mutate(n = xsit_min_n(p, C, M, .75))
-
+generate_xsit_stims <- function(C = 4, M = 16, n = 100) {
   
-ns <- xsit_conditions %>%
-  left_join(teach_ns) %>%
-  mutate(type = "teach") %>%
-  bind_rows(xsit_ns %>% mutate(type = "xsit"))
+  stims <- tibble(item = 2:M, count = 0) %>%
+    mutate(trial = 0)
+  
+  for(i in 1:n) {
+    
+    last_trial <- stims %>%
+      filter(trial == i -1)
+    
+    increment <- sample(last_trial %>% pull(item), C - 1)
+      
+    this_trial <- last_trial %>%
+      mutate(count = if_else(item %in% increment, count + 1, count),
+             trial = trial + 1)
+    
+    stims <- bind_rows(stims, this_trial)
+    
+  }
+  
+  stims %>%
+    bind_rows(tibble(item = 1, trial = 1:n, count = trial)) %>%
+    filter(trial > 0)
+}
+  
 
-ggplot(ns, aes(x = p, y = n, color = type)) + 
-  facet_grid(C ~ M) +
-  geom_point()
+C <- 1
+M <- 16
+p <- .6
+alpha <- 2
 
-
-ggplot(xsit_ns, aes(x = p, y = n, color = as.factor(M))) + 
-  facet_grid(. ~ C) +
-  geom_point()
-
-
-ns %>%
-  spread(type, n) %>%
-  mutate(ratio = xsit - teach) %>%
-  ggplot(aes(x = p, y = ratio, color = as.factor(C))) + 
-  facet_grid(. ~ M) + 
-  geom_smooth()
-
+generate_xsit_stims(C, M) %>%
+  mutate(assoc = count * p,
+         target = item == 1,
+         str = exp(alpha * assoc)) %>%
+  group_by(trial, target) %>%
+  summarise(str = sum(assoc)) %>%
+  spread(target, str) %>%
+  mutate(learn = `TRUE` / (`TRUE` + `FALSE`)) %>%
+  select(trial, learn)
 ```
 
 personalized communication
@@ -187,72 +183,75 @@ act_u <- function(delay, k, n) {
           pteach = teach_p)
    
 }
-
-act_u(delay = 3, k = teach_outcome(3), n = 3)
 ```
 
-```{r}
-# act_u(70, 0, 1, .5, delay = 0, k = 0, p = .6,n = 0)
-# 
-# act_u(70, 0, .1, .5, delay = 1, k = .6, p = .6,n = 1)
-# 
-# 
-# trials <- crossing(delay = 0:12, n = 0:12) %>%
-#   filter(n <= delay)
-#   
-# outcomes <- map_df(1:nrow(trials), 
-#        ~act_u(P, S, alpha, lambda = .5, 
-#               delay = slice(trials, .x) %>% pull(delay), .5, 
-#               n = slice(trials, .x) %>% pull(n)))
-```
+```{r simulate}
+MAX_DELAY <- 4
 
+communication_probs <- function(p) {
 
-communication in expectation
-```{r, eval = F}
-p_outcomes <- trials %>%
-  mutate(p_occur = 1)
+  teach_probs <- map_df(0:50, ~act_u(delay = 0, teach_outcome(.x), n = .x)) %>%
+    select(-delay, -eu) #%>%
+   # mutate(know_prob =  teach_outcome(n + 1, p = p))
+  
+  
+  teach_counts <- tibble(n = 0, prob = 1)
+  
+  MAX_TRIAL <- 50
+  unknown_remaining <- function(trials, unknowns, teach_counts) {
+    
+    trial = last(trials)
+    unknown = last(unknowns)
+    
+    if(trial == MAX_TRIAL)
+      return(tibble(trial = trials, prob = 1 - unknowns))
+    
+    updated_counts <- teach_counts %>%
+      left_join(teach_probs, by = "n") %>%
+      gather(modality, outcome, pspeak, ppoint, pteach) %>%
+      mutate(new_prob = prob * outcome)
+    
+    taught <- updated_counts %>% 
+      filter(modality == "pteach") %>% 
+      mutate(new_prob = new_prob * p) %>%
+      summarise(new_prob = sum(new_prob)) %>%
+      pull()
+      
+    
+    unknown <- unknown * (1 - taught)
+    
+    teach_counts <- updated_counts %>%
+      mutate(new_prob = if_else(modality == "pteach",
+                               new_prob * (1 - p), new_prob),
+             n = if_else(modality == "pspeak", 0,
+                         if_else(modality == "pteach", n + 1, n))) %>%
+      select(-outcome, -modality, -prob) %>%
+      group_by(n) %>%
+      rename(prob = new_prob) %>%
+      summarise(prob = sum(prob)) %>%
+      mutate(prob = prob / sum(prob))
+    
+    return(unknown_remaining(c(trials, trial + 1), 
+                             c(unknowns, unknown),
+                             teach_counts))
+  }
 
-for(row in 2:nrow(p_outcomes)) {
-  outcome <- outcomes %>%
-    slice(row)
-  
-  last_teach_occur <- p_outcomes %>%
-    filter(delay == outcome$delay - 1,
-           n == outcome$n -1) %>%
-    pull(p_occur) %>%
-    max(.,0)
-  
-  last_teach_p <- outcomes %>%
-    filter(delay == outcome$delay - 1,
-           n == outcome$n -1) %>%
-    pull(pteach) %>%
-    max(.,0)
-
-  last_not_teach_occur <- p_outcomes %>%
-    filter(delay == outcome$delay - 1,
-           n == outcome$n) %>%
-    pull(p_occur) %>%
-    max(.,0)
-  
-  last_not_teach_p <- 1 - outcomes %>%
-    filter(delay == outcome$delay - 1,
-           n == outcome$n) %>%
-    pull(pteach) %>%
-    max(.,0) 
-  
-  p_outcomes[row, "p_occur"] <- last_not_teach_occur * last_not_teach_p + 
-    last_teach_occur *last_teach_p
+unknown_remaining(0, 1, teach_counts) %>%
+  mutate(p = p)
 }
 
-tidy_outcomes <- p_outcomes %>%
-  group_by(delay) %>%
-  mutate(teach = n * p_occur) %>%
-  summarise(teach = sum(teach)) %>%
-  rename(trial = delay) %>%
-  filter(trial >=  1)
+communication_props <- map_df(c(.25, .5, .75), ~communication_probs(.x))
 
-ggplot(tidy_outcomes, aes(x = trial, y = teach)) + 
-  geom_point()
+
+all_props <- communication_props %>%
+  mutate(type = "communication") %>% 
+  rename(n = trial) %>%
+  bind_rows(mutate(teach_props, type = "teaching"))
+
+
+ggplot(all_props, aes(x = n, y = prob, color = as.factor(p))) + 
+  geom_line(aes(linetype = type)) + 
+  scale_color_brewer(palette = "Set1")
+
 ```
-
 
