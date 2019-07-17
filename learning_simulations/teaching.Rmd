@@ -58,20 +58,29 @@ generate_xsit_stims <- function(C = 4, M = 16, n = 100) {
 }
   
 
-C <- 1
+C <- 4
 M <- 16
-p <- .6
-alpha <- 2
+p <- .5
+alpha <- 1
 
-generate_xsit_stims(C, M) %>%
-  mutate(assoc = count * p,
-         target = item == 1,
-         str = exp(alpha * assoc)) %>%
-  group_by(trial, target) %>%
-  summarise(str = sum(assoc)) %>%
-  spread(target, str) %>%
-  mutate(learn = `TRUE` / (`TRUE` + `FALSE`)) %>%
-  select(trial, learn)
+crossit_probs <- function(p, C, M) {
+  generate_xsit_stims(C, M) %>%
+    mutate(assoc = count * (p/C),
+           target = item == 1,
+           str = exp(alpha * assoc)) %>%
+    group_by(trial, target) %>%
+    summarise(str = sum(str)) %>%
+    spread(target, str) %>%
+    mutate(prob = `TRUE` / (`TRUE` + `FALSE`)) %>%
+    select(trial, prob) %>%
+    rename(n = trial) %>%
+    mutate(p = p)
+}
+
+cross_props <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, C, M))
+
+ggplot(cross_props, aes(x = n, y = prob, color = as.factor(p))) + 
+  geom_line()
 ```
 
 personalized communication
@@ -111,7 +120,7 @@ discount <- function(delay, lambda = .5) {
   lambda ^ delay
 }
 
-act_u <- function(delay, k, n) {
+act_u <- function(delay, k, n, p = .6) {
   
   if(delay > MAX_DELAY) {
     expected_util <- 0
@@ -124,41 +133,41 @@ act_u <- function(delay, k, n) {
       
       speak_util <- speak_fail_u() +
         discount(delay + 1) * 
-        (act_u(delay + 1, k = 0, n = 0) %>% pull(eu))
+        (act_u(delay + 1, k = 0, n = 0, p) %>% pull(eu))
       
       point_util <- point_u() + 
         discount(delay + 1) * 
-        (act_u(delay + 1, k = 0, n = 0) %>% pull(eu))
+        (act_u(delay + 1, k = 0, n = 0, p) %>% pull(eu))
       
       teach_util <- teach_u() + 
         discount(delay + 1) * 
-        (act_u(delay + 1, teach_outcome(), n = 1) %>% pull(eu))
+        (act_u(delay + 1, teach_outcome(), n = 1, p) %>% pull(eu))
       
     } else if(k == 1) {
        speak_util <- speak_success_u() + 
                        discount(delay + 1) * 
-                       (act_u(delay + 1, k = 1, n = 0) %>% pull(eu))
+                       (act_u(delay + 1, k = 1, n = 0, p) %>% pull(eu))
 
        point_util <- point_u() + 
                        discount(delay + 1) * 
-                       (act_u(delay + 1, k = 1, n = 0) %>% pull(eu))
+                       (act_u(delay + 1, k = 1, n = 0, p) %>% pull(eu))
        
        teach_util <- teach_u() + 
          discount(delay + 1) * 
-         (act_u(delay + 1, k = 1, n = n + 1) %>% pull(eu))
+         (act_u(delay + 1, k = 1, n = n + 1, p) %>% pull(eu))
       
     } else {
       speak_util <- (k * (speak_success_u() +
                            discount(delay + 1) * 
-                           (act_u(delay + 1, k = 1, n = 0) %>% pull(eu)))) +
+                           (act_u(delay + 1, k = 1, n = 0, p) %>% pull(eu)))) +
         ((1-k) * (speak_fail_u() + discount(delay+1) * 
-                       (act_u(delay + 1, k = 0, n = 0) %>% pull(eu))))
+                       (act_u(delay + 1, k = 0, n = 0, p) %>% pull(eu))))
       
       point_util <- point_u() + discount(delay + 1) * 
-         (act_u(delay + 1, k, n) %>% pull(eu))
+         (act_u(delay + 1, k, n, p) %>% pull(eu))
             
       teach_util <- teach_u() + discount(delay + 1) * 
-         (act_u(delay + 1, teach_outcome(n + 1, p), n = n + 1) %>% pull(eu))
+         (act_u(delay + 1, teach_outcome(n + 1, p), n = n + 1, p) %>% pull(eu))
     }
    
    teach_p <- exp(alpha * teach_util) / (
@@ -190,7 +199,8 @@ MAX_DELAY <- 4
 
 communication_probs <- function(p) {
 
-  teach_probs <- map_df(0:50, ~act_u(delay = 0, teach_outcome(.x), n = .x)) %>%
+  teach_probs <- map_df(0:50, ~act_u(delay = 0, teach_outcome(.x, p), 
+                                     n = .x, p)) %>%
     select(-delay, -eu) #%>%
    # mutate(know_prob =  teach_outcome(n + 1, p = p))
   
@@ -246,7 +256,9 @@ communication_props <- map_df(c(.25, .5, .75), ~communication_probs(.x))
 all_props <- communication_props %>%
   mutate(type = "communication") %>% 
   rename(n = trial) %>%
-  bind_rows(mutate(teach_props, type = "teaching"))
+  bind_rows(mutate(teach_props, type = "teaching")) %>%
+  bind_rows(mutate(cross_props, type = "xsit")) %>%
+  mutate(type = factor(type, levels = c("teaching", "communication", "xsit")))
 
 
 ggplot(all_props, aes(x = n, y = prob, color = as.factor(p))) + 
