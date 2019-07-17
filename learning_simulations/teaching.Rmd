@@ -63,10 +63,36 @@ ggplot(ns, aes(x = p, y = n, color = type)) +
   geom_point()
 
 
+plot_tmp <- ns %>% 
+  mutate(howHard = if_else(C==1 & M == 8, "easiest", "NA"),
+         howHard = if_else(C==4 & M == 256, "hardest", howHard)) %>% 
+  select(-C, -M) %>%
+  filter(howHard != "NA") %>%
+  spread(howHard, n) %>% 
+  mutate(type = factor(type, levels=c("xsit","teach"),
+                            labels=c("XSL","Teaching"), ordered=TRUE)) %>%
+  mutate(hypCommunication = easiest + sample(c(1,2), 1))
+
+label_data <- tibble(p = c(.75, .85, .85), 
+                     type = c("XSL", "Teaching", "Communication"), easiest = c(5.5, 1.5, 2.35))
+
+
+
+ggplot(plot_tmp, aes(x = p, y = easiest, label=type)) + 
+  geom_ribbon(data= (plot_tmp %>% filter(type=="XSL")), aes(x=p,ymin=easiest, ymax=hardest), 
+              color="grey", alpha=.5, fill="darkgrey") +
+  geom_ribbon(data= (plot_tmp %>% filter(type=="Teaching")), aes(x=p,ymin=easiest, ymax=easiest), color="green3") +
+  #hypotheszied teaching data, v rough for hypothetical findings plot
+  geom_line(data= (plot_tmp %>% filter(type=="Teaching")), aes(x=p,y=hypCommunication), color="red") +
+  labs(x="Learning Parameter", y = "Model Estimated Number of \n Exposures to Learn One Word") +
+  geom_text(data = label_data, color=c('darkgrey', "green3", "red"))
+
+
+
+
 ggplot(xsit_ns, aes(x = p, y = n, color = as.factor(M))) + 
   facet_grid(. ~ C) +
-  geom_point()
-
+  geom_point() 
 
 ns %>%
   spread(type, n) %>%
@@ -74,6 +100,113 @@ ns %>%
   ggplot(aes(x = p, y = ratio, color = as.factor(C))) + 
   facet_grid(. ~ M) + 
   geom_smooth()
+
+```
+
+communication
+```{r}
+discount <- function(lambda = .5, delay) {
+  lambda ^ delay
+}
+
+P <- 70
+S <- 0
+alpha <- 2
+k <- .6
+
+
+speak_u <- function(P, S, alpha, lambda, delay, k, n) {
+ utility <- 100 * teach_learn_p(k, n) - S
+ log(max(utility, 0) + .001)
+}
+
+teach_u <- function(P, S, alpha, lambda, delay, k, n) {
+  utility <- (100 - P - S)
+   log(max(utility, 0) + .001)
+}
+
+act_u <- function(P, S, alpha, lambda, delay, k, n) {
+  MAX_DELAY <- 12
+  
+  if(delay >= MAX_DELAY) {
+    expected_util <- 0
+    teach_p <- NA
+  }
+  else {
+   speak_util <- speak_u(P, S, alpha, lambda, delay, k, n) +
+     discount(lambda, delay+1) * 
+     act_u(P, S, alpha,lambda, delay + 1, k, n) %>% pull(eu)
+   teach_util <- teach_u(P, S, alpha, lambda, delay, k, n) +
+     discount(lambda, delay+1) * 
+     act_u(P, S, alpha,lambda, delay + 1, k, n + 1) %>% pull(eu)
+   
+   teach_p <- exp(alpha * teach_util) / (
+     exp(alpha * teach_util) + (exp(alpha * speak_util)))
+   
+   expected_util <- teach_p * teach_util + (1- teach_p) * speak_util
+  
+#  print(expected_util)
+  }
+   
+   tibble(delay = delay,
+          n = n,
+          eu = expected_util,
+          pteach = teach_p)
+   
+}
+
+trials <- crossing(delay = 0:12, n = 0:12) %>%
+  filter(n <= delay)
+  
+outcomes <- map_df(1:nrow(trials), 
+       ~act_u(P, S, alpha, lambda = .5, 
+              delay = slice(trials, .x) %>% pull(delay), .5, 
+              n = slice(trials, .x) %>% pull(n)))
+
+
+p_outcomes <- trials %>%
+  mutate(p_occur = 1)
+
+for(row in 2:nrow(p_outcomes)) {
+  outcome <- outcomes %>%
+    slice(row)
+  
+  last_teach_occur <- p_outcomes %>%
+    filter(delay == outcome$delay - 1,
+           n == outcome$n -1) %>%
+    pull(p_occur) %>%
+    max(.,0)
+  
+  last_teach_p <- outcomes %>%
+    filter(delay == outcome$delay - 1,
+           n == outcome$n -1) %>%
+    pull(pteach) %>%
+    max(.,0)
+
+  last_not_teach_occur <- p_outcomes %>%
+    filter(delay == outcome$delay - 1,
+           n == outcome$n) %>%
+    pull(p_occur) %>%
+    max(.,0)
+  
+  last_not_teach_p <- 1 - outcomes %>%
+    filter(delay == outcome$delay - 1,
+           n == outcome$n) %>%
+    pull(pteach) %>%
+    max(.,0) 
+  
+  p_outcomes[row, "p_occur"] <- last_not_teach_occur * last_not_teach_p + 
+    last_teach_occur *last_teach_p
+}
+
+tidy_outcomes <- left_join(outcomes, p_outcomes) %>%
+  mutate(total_teach = p_occur * n) %>%
+  group_by(delay) %>%
+  summarise(total_teach = sum(total_teach)) %>%
+  mutate(trial = delay -1)
+
+ggplot(tidy_outcomes, aes(x = delay, y = total_teach)) + 
+  geom_point()
 
 ```
 
