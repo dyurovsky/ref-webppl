@@ -63,15 +63,15 @@ tmp %>%
   theme_bw()
 #100_30 would translate to about 65 speed
 
-empiricalImplicitVocabs <- exp3_dropped %>%
+empiricalImplicitVocabs <- all_data %>%
   group_by(ldf_num, condition, partnersExposure, realLabel, exposureRate) %>%
   summarize(testCorrect=first(testCorrect)) %>%
-  left_join(implicit_points %>% filter(type=='meanScore')) %>%
-  rename(exposures=exposureRate,
-         label_points=speech,
-         click_points= gesture,
-         teach_points = teach,
-         label= realLabel) %>%
+  # left_join(implicit_points %>% filter(type=='meanScore')) %>%
+  # rename(exposures=exposureRate,
+  #        label_points=speech,
+  #        click_points= gesture,
+  #        teach_points = teach,
+  #        label= realLabel) %>%
   ungroup() %>%
   mutate(known = ifelse(testCorrect == 1, TRUE, FALSE),
          partnersExposure = ifelse(partnersExposure=='Perfect', 2, 

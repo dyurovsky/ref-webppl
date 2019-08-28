@@ -8,142 +8,228 @@ editor_options:
 ```{r}
 library(tidyverse)
 library(tidyboot)
+
+theme_set(theme_classic(base_size = 14))
+
 ```
 
 ```{r}
 teach_learn_p <- function(p , n) {
-  1 - (1-p)^n
+  1 - (1-p) ^ n
 }
 
-teach_min_n <- function(p, t) {
-  tibble(n = 1:1000, prob = map(1:1000, ~teach_learn_p(p, .x)) 
+teach_learn_prop <- function(p) {
+  tibble(n = 1:50, prob = map(1:50, ~teach_learn_p(p, .x)) 
          %>% unlist()) %>%
-    filter(prob >= t) %>%
-    slice(1) %>%
-    pull(n)
+    mutate(p = p)
 }
 
 
-teach_ns <- tibble(p = seq(.25,1,.01), n = map_int(seq(.25,1,.01), 
-                                         ~teach_min_n(.x, .75)))
+teach_props <- map_df(seq(.25,.75,.25), ~teach_learn_prop(.x))
 
-ggplot(teach_ns, aes(x = p, y = n)) + 
+ggplot(teach_props, aes(x = n, y = prob, color = as.factor(p))) + 
   geom_line()
 ```
 
 ```{r xsit}
-xsit_learn_p <- function(p, C, M, n, a = 2) {
-  exp(a * p * n) / ((M * exp((a * p * n)*(C/M))) +  exp(a * p * n))
-}
-
-xsit_min_n <- function(p, C, M, t) {
-  tibble(n = 1:1000, prob = map(1:1000, ~xsit_learn_p(p, C, M, .x)) 
-         %>% unlist()) %>%
-    filter(prob >= t) %>%
-    slice(1) %>%
-    pull(n)
-}
-
-xsit_conditions <- crossing(C = c(1, 2, 4),
-                            M = c(8, 64, 256),
-                            p = seq(.25, 1, .01)) 
-
-xsit_ns <- xsit_conditions %>%
-  rowwise() %>%
-  mutate(n = xsit_min_n(p, C, M, .75))
-
+generate_xsit_stims <- function(C = 4, M = 16, n = 100) {
   
-ns <- xsit_conditions %>%
-  left_join(teach_ns) %>%
-  mutate(type = "teach") %>%
-  bind_rows(xsit_ns %>% mutate(type = "xsit"))
+  stims <- tibble(item = 2:M, count = 0) %>%
+    mutate(trial = 0)
+  
+  for(i in 1:n) {
+    
+    last_trial <- stims %>%
+      filter(trial == i -1)
+    
+    increment <- sample(last_trial %>% pull(item), C - 1)
+      
+    this_trial <- last_trial %>%
+      mutate(count = if_else(item %in% increment, count + 1, count),
+             trial = trial + 1)
+    
+    stims <- bind_rows(stims, this_trial)
+    
+  }
+  
+  stims %>%
+    bind_rows(tibble(item = 1, trial = 1:n, count = trial)) %>%
+    filter(trial > 0)
+}
 
-ggplot(ns, aes(x = p, y = n, color = type)) + 
-  facet_grid(C ~ M) +
-  geom_point()
+# xsit_conditions <- crossing(C = c(1, 2, 4),
+#                             M = c(8, 64, 256),
+#                             p = seq(.25, 1, .01)) 
+# 
+# xsit_ns <- xsit_conditions %>%
+#   rowwise() %>%
+#   mutate(n = xsit_min_n(p, C, M, .75))
+# 
+#   
+# ns <- xsit_conditions %>%
+#   left_join(teach_ns) %>%
+#   mutate(type = "teach") %>%
+#   bind_rows(xsit_ns %>% mutate(type = "xsit"))
+# 
+# ggplot(ns, aes(x = p, y = n, color = type)) + 
+#   facet_grid(C ~ M) +
+#   geom_point()
+# 
+# 
+# plot_tmp <- ns %>% 
+#   mutate(howHard = if_else(C==1 & M == 8, "easiest", "NA"),
+#          howHard = if_else(C==4 & M == 256, "hardest", howHard)) %>% 
+#   select(-C, -M) %>%
+#   filter(howHard != "NA") %>%
+#   spread(howHard, n) %>% 
+#   mutate(type = factor(type, levels=c("xsit","teach"),
+#                             labels=c("XSL","Teaching"), ordered=TRUE)) %>%
+#   mutate(hypCommunication = easiest + sample(c(1,2), 1))
+# 
+# label_data <- tibble(p = c(.75, .85, .85), 
+#                      type = c("XSL", "Teaching", "Communication"), easiest = c(5.5, 1.5, 2.35))
+# 
+# 
+# 
+# ggplot(plot_tmp, aes(x = p, y = easiest, label=type)) + 
+#   geom_ribbon(data= (plot_tmp %>% filter(type=="XSL")), aes(x=p,ymin=easiest, ymax=hardest), 
+#               color="grey", alpha=.5, fill="darkgrey") +
+#   geom_ribbon(data= (plot_tmp %>% filter(type=="Teaching")), aes(x=p,ymin=easiest, ymax=easiest), color="green3") +
+#   #hypotheszied teaching data, v rough for hypothetical findings plot
+#   geom_line(data= (plot_tmp %>% filter(type=="Teaching")), aes(x=p,y=hypCommunication), color="red") +
+#   labs(x="Learning Parameter", y = "Model Estimated Number of \n Exposures to Learn One Word") +
+#   geom_text(data = label_data, color=c('darkgrey', "green3", "red"))
+# 
+# 
+# 
+# 
+# ggplot(xsit_ns, aes(x = p, y = n, color = as.factor(M))) + 
+#   facet_grid(. ~ C) +
+#   geom_point() 
 
 
-plot_tmp <- ns %>% 
-  mutate(howHard = if_else(C==1 & M == 8, "easiest", "NA"),
-         howHard = if_else(C==4 & M == 256, "hardest", howHard)) %>% 
-  select(-C, -M) %>%
-  filter(howHard != "NA") %>%
-  spread(howHard, n) %>% 
-  mutate(type = factor(type, levels=c("xsit","teach"),
-                            labels=c("XSL","Teaching"), ordered=TRUE)) %>%
-  mutate(hypCommunication = easiest + sample(c(1,2), 1))
+C <- 4
+M <- 16
+p <- .5
+alpha <- 1
 
-label_data <- tibble(p = c(.75, .85, .85), 
-                     type = c("XSL", "Teaching", "Communication"), easiest = c(5.5, 1.5, 2.35))
+crossit_probs <- function(p, C, M) {
+  generate_xsit_stims(C, M) %>%
+    mutate(assoc = count * (p/C),
+           target = item == 1,
+           str = exp(alpha * assoc)) %>%
+    group_by(trial, target) %>%
+    summarise(str = sum(str)) %>%
+    spread(target, str) %>%
+    mutate(prob = `TRUE` / (`TRUE` + `FALSE`)) %>%
+    select(trial, prob) %>%
+    rename(n = trial) %>%
+    mutate(p = p)
+}
 
+cross_props <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, C, M))
 
-
-ggplot(plot_tmp, aes(x = p, y = easiest, label=type)) + 
-  geom_ribbon(data= (plot_tmp %>% filter(type=="XSL")), aes(x=p,ymin=easiest, ymax=hardest), 
-              color="grey", alpha=.5, fill="darkgrey") +
-  geom_ribbon(data= (plot_tmp %>% filter(type=="Teaching")), aes(x=p,ymin=easiest, ymax=easiest), color="green3") +
-  #hypotheszied teaching data, v rough for hypothetical findings plot
-  geom_line(data= (plot_tmp %>% filter(type=="Teaching")), aes(x=p,y=hypCommunication), color="red") +
-  labs(x="Learning Parameter", y = "Model Estimated Number of \n Exposures to Learn One Word") +
-  geom_text(data = label_data, color=c('darkgrey', "green3", "red"))
-
-
-
-
-ggplot(xsit_ns, aes(x = p, y = n, color = as.factor(M))) + 
-  facet_grid(. ~ C) +
-  geom_point() 
-
-ns %>%
-  spread(type, n) %>%
-  mutate(ratio = xsit - teach) %>%
-  ggplot(aes(x = p, y = ratio, color = as.factor(C))) + 
-  facet_grid(. ~ M) + 
-  geom_smooth()
-
+ggplot(cross_props, aes(x = n, y = prob, color = as.factor(p))) + 
+  geom_line()
 ```
 
-communication
+personalized communication
 ```{r}
-discount <- function(lambda = .5, delay) {
-  lambda ^ delay
-}
+MAX_DELAY <- 10
+U <- 100
 
 P <- 70
 S <- 0
 alpha <- 2
-k <- .6
+lambda <- .5
+p <- .6
 
 
-speak_u <- function(P, S, alpha, lambda, delay, k, n) {
- utility <- 100 * teach_learn_p(k, n) - S
- log(max(utility, 0) + .001)
+teach_outcome <- function(n = 1, p = .6) {
+  1 - (1-p) ^ n
 }
 
-teach_u <- function(P, S, alpha, lambda, delay, k, n) {
-  utility <- (100 - P - S)
-   log(max(utility, 0) + .001)
+# this can't contain ps if it's going to get logged
+speak_success_u <- function(S = 0) {
+ log(max(U - S, 0) + .001)
 }
 
-act_u <- function(P, S, alpha, lambda, delay, k, n) {
-  MAX_DELAY <- 12
+speak_fail_u <- function() {
+ log(max(0 - S, .001))
+}
+
+point_u <- function(P = 30) {
+  log(max(U - P, 0) + .001)
+}
+
+teach_u <- function(P = 30, S = 0) {
+  log(max(U - P - S, 0) + .001)
+}
+
+discount <- function(delay, lambda = .5) {
+  lambda ^ delay
+}
+
+act_u <- function(delay, k, n, p = .6) {
   
-  if(delay >= MAX_DELAY) {
+  if(delay > MAX_DELAY) {
     expected_util <- 0
     teach_p <- NA
+    speak_p <- NA
   }
+  
   else {
-   speak_util <- speak_u(P, S, alpha, lambda, delay, k, n) +
-     discount(lambda, delay+1) * 
-     act_u(P, S, alpha,lambda, delay + 1, k, n) %>% pull(eu)
-   teach_util <- teach_u(P, S, alpha, lambda, delay, k, n) +
-     discount(lambda, delay+1) * 
-     act_u(P, S, alpha,lambda, delay + 1, k, n + 1) %>% pull(eu)
+    if(k == 0) {
+      
+      speak_util <- speak_fail_u() +
+        discount(delay + 1) * 
+        (act_u(delay + 1, k = 0, n = 0, p) %>% pull(eu))
+      
+      point_util <- point_u() + 
+        discount(delay + 1) * 
+        (act_u(delay + 1, k = 0, n = 0, p) %>% pull(eu))
+      
+      teach_util <- teach_u() + 
+        discount(delay + 1) * 
+        (act_u(delay + 1, teach_outcome(), n = 1, p) %>% pull(eu))
+      
+    } else if(k == 1) {
+       speak_util <- speak_success_u() + 
+                       discount(delay + 1) * 
+                       (act_u(delay + 1, k = 1, n = 0, p) %>% pull(eu))
+
+       point_util <- point_u() + 
+                       discount(delay + 1) * 
+                       (act_u(delay + 1, k = 1, n = 0, p) %>% pull(eu))
+       
+       teach_util <- teach_u() + 
+         discount(delay + 1) * 
+         (act_u(delay + 1, k = 1, n = n + 1, p) %>% pull(eu))
+      
+    } else {
+      speak_util <- (k * (speak_success_u() +
+                           discount(delay + 1) * 
+                           (act_u(delay + 1, k = 1, n = 0, p) %>% pull(eu)))) +
+        ((1-k) * (speak_fail_u() + discount(delay+1) * 
+                       (act_u(delay + 1, k = 0, n = 0, p) %>% pull(eu))))
+      
+      point_util <- point_u() + discount(delay + 1) * 
+         (act_u(delay + 1, k, n, p) %>% pull(eu))
+            
+      teach_util <- teach_u() + discount(delay + 1) * 
+         (act_u(delay + 1, teach_outcome(n + 1, p), n = n + 1, p) %>% pull(eu))
+    }
    
    teach_p <- exp(alpha * teach_util) / (
-     exp(alpha * teach_util) + (exp(alpha * speak_util)))
+     exp(alpha * teach_util) + (exp(alpha * speak_util) + 
+                                  (exp(alpha * point_util))))
    
-   expected_util <- teach_p * teach_util + (1- teach_p) * speak_util
+   speak_p <- exp(alpha * speak_util) / (
+     exp(alpha * speak_util) + (exp(alpha * point_util) + 
+                                  (exp(alpha * teach_util))))
+   
+   expected_util <- teach_p * teach_util + (speak_p) * speak_util +
+     (1 - speak_p - teach_p) * point_util
   
 #  print(expected_util)
   }
@@ -151,62 +237,147 @@ act_u <- function(P, S, alpha, lambda, delay, k, n) {
    tibble(delay = delay,
           n = n,
           eu = expected_util,
+          pspeak = speak_p,
+          ppoint = 1 - speak_p - teach_p,
           pteach = teach_p)
    
 }
+```
 
-trials <- crossing(delay = 0:12, n = 0:12) %>%
-  filter(n <= delay)
-  
-outcomes <- map_df(1:nrow(trials), 
-       ~act_u(P, S, alpha, lambda = .5, 
-              delay = slice(trials, .x) %>% pull(delay), .5, 
-              n = slice(trials, .x) %>% pull(n)))
+```{r simulate}
+MAX_DELAY <- 4
 
+communication_probs <- function(p) {
 
-p_outcomes <- trials %>%
-  mutate(p_occur = 1)
+  teach_probs <- map_df(0:50, ~act_u(delay = 0, teach_outcome(.x, p), 
+                                     n = .x, p)) %>%
+    select(-delay, -eu) #%>%
+   # mutate(know_prob =  teach_outcome(n + 1, p = p))
+  
+  
+  teach_counts <- tibble(n = 0, prob = 1)
+  
+  MAX_TRIAL <- 50
+  unknown_remaining <- function(trials, unknowns, teach_counts) {
+    
+    trial = last(trials)
+    unknown = last(unknowns)
+    
+    if(trial == MAX_TRIAL)
+      return(tibble(trial = trials, prob = 1 - unknowns))
+    
+    updated_counts <- teach_counts %>%
+      left_join(teach_probs, by = "n") %>%
+      gather(modality, outcome, pspeak, ppoint, pteach) %>%
+      mutate(new_prob = prob * outcome)
+    
+    taught <- updated_counts %>% 
+      filter(modality == "pteach") %>% 
+      mutate(new_prob = new_prob * p) %>%
+      summarise(new_prob = sum(new_prob)) %>%
+      pull()
+      
+    
+    unknown <- unknown * (1 - taught)
+    
+    teach_counts <- updated_counts %>%
+      mutate(new_prob = if_else(modality == "pteach",
+                               new_prob * (1 - p), new_prob),
+             n = if_else(modality == "pspeak", 0,
+                         if_else(modality == "pteach", n + 1, n))) %>%
+      select(-outcome, -modality, -prob) %>%
+      group_by(n) %>%
+      rename(prob = new_prob) %>%
+      summarise(prob = sum(prob)) %>%
+      mutate(prob = prob / sum(prob))
+    
+    return(unknown_remaining(c(trials, trial + 1), 
+                             c(unknowns, unknown),
+                             teach_counts))
+  }
 
-for(row in 2:nrow(p_outcomes)) {
-  outcome <- outcomes %>%
-    slice(row)
-  
-  last_teach_occur <- p_outcomes %>%
-    filter(delay == outcome$delay - 1,
-           n == outcome$n -1) %>%
-    pull(p_occur) %>%
-    max(.,0)
-  
-  last_teach_p <- outcomes %>%
-    filter(delay == outcome$delay - 1,
-           n == outcome$n -1) %>%
-    pull(pteach) %>%
-    max(.,0)
-
-  last_not_teach_occur <- p_outcomes %>%
-    filter(delay == outcome$delay - 1,
-           n == outcome$n) %>%
-    pull(p_occur) %>%
-    max(.,0)
-  
-  last_not_teach_p <- 1 - outcomes %>%
-    filter(delay == outcome$delay - 1,
-           n == outcome$n) %>%
-    pull(pteach) %>%
-    max(.,0) 
-  
-  p_outcomes[row, "p_occur"] <- last_not_teach_occur * last_not_teach_p + 
-    last_teach_occur *last_teach_p
+unknown_remaining(0, 1, teach_counts) %>%
+  mutate(p = p)
 }
 
-tidy_outcomes <- left_join(outcomes, p_outcomes) %>%
-  mutate(total_teach = p_occur * n) %>%
-  group_by(delay) %>%
-  summarise(total_teach = sum(total_teach)) %>%
-  mutate(trial = delay -1)
 
-ggplot(tidy_outcomes, aes(x = delay, y = total_teach)) + 
-  geom_point()
+
+communication_props <- map_df(c(.25, .5, .75), ~communication_probs(.x))
+
+
+cross_props_2_24 <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, 2, 24))
+cross_props_4_24 <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, 4, 24))
+cross_props_6_24 <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, 6, 24))
+
+cross_props <- bind_cols(cross_props_2_16, cross_props_6_16) %>%
+  mutate(type="xsit")
+
+
+all_props <- communication_props %>%
+  mutate(type = "Communication") %>% 
+  rename(n = trial) %>%
+  bind_rows(mutate(teach_props, type = "Teaching")) %>%
+  bind_rows(mutate(cross_props_2_24, type = "XSit: 2 competitors")) %>%
+  bind_rows(mutate(cross_props_6_24, type = "XSit: 6 competitors")) %>%
+  mutate(type = factor(type, levels = c("Teaching", "Communication", "XSit: 2 competitors", "XSit: 6 competitors")))
+
+
+ggplot(all_props, aes(x = n, y = prob, color = as.factor(p))) + 
+  geom_line(aes(linetype = type)) + 
+  scale_color_brewer(palette = "Set1") +
+  scale_linetype_manual(values=c("solid", "dotdash", "dashed"))
+
+#ben's plot
+# xsit is range of cases 2 competitors to 6
+  # two xsits for .25 and .75 p value
+# teachinga nd comm show range of ps, range of learning paramaeters
+
+all_props %>%
+  filter(p != .5) %>%
+  # mutate(p =  paste0("learning parameter = ", p)) %>%
+  ggplot(aes(x = n, y=prob, color = type)) + 
+  geom_line() +
+  # geom_line(aes(linetype = as.factor(p))) + 
+  labs(y="Probability of Learning", x="Number of Exposures") +
+  # scale_linetype_manual(values=c("dotdash", "solid")) +
+  scale_color_manual(values=c("green3", "red", "blue3", "lightblue")) +
+  facet_grid(p~.)
+  
+
+all_props %>%
+  filter(p != .5,
+         !grepl("xsit",type)) %>%
+  spread(p, prob) %>%
+  ggplot(aes(x = n, color = type, fill=type)) + 
+  geom_ribbon(data= cross_props %>% filter(p == .25), aes(x = n, ymin = prob1, ymax=prob), fill="grey", alpha=.5) +
+  geom_ribbon(data= cross_props %>% filter(p == .75), aes(x = n, ymin = prob1, ymax=prob), fill="darkgrey", alpha=.5) +
+  geom_ribbon(aes(ymin=`0.25`, ymax=`0.75`), alpha=.8) +
+  # facet_grid(p~.) +
+  # geom_line(aes(linetype = as.factor(p))) + 
+  labs(y="Probability of Learning", x="Number of Exposures") +
+  scale_linetype_manual(values=c("solid", "dotdash", "dashed"))+
+  scale_color_manual(values=c("red", "green3", "darkgrey"))+
+  scale_fill_manual(values=c("green3", "red", "darkgrey"))
+
+
+all_props_spread <-  all_props %>%
+  spread(p, prob)
+
+#range of learning p values for all things...
+# 2 xsit models
+
+ggplot(all_props_spread, aes(x = n, color = type, fill=type)) + 
+  geom_ribbon(data= all_props_spread %>% filter(grepl("xsit",type)), aes(x = n, ymin = `0.25`, ymax=`0.75`), alpha=.5) +
+  geom_ribbon(data= all_props_spread %>% filter(grepl("comm",type)), aes(x = n, ymin = `0.25`, ymax=`0.75`), alpha=.7) +
+  geom_ribbon(data= all_props_spread %>% filter(grepl("teach",type)), aes(x = n, ymin = `0.25`, ymax=`0.75`), alpha=.8) +
+  # facet_grid(p~.) +
+  # geom_line(aes(linetype = as.factor(p))) + 
+  labs(y="Probability of Learning", x="Number of Exposures") +
+  scale_color_manual(values=c("red", "green3", "grey", "darkgrey")) +
+  scale_fill_manual(values=c("red", "green3", "lightgrey","darkgrey"))
+
+
+
 
 ```
 
