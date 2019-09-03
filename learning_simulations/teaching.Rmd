@@ -5,7 +5,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-```{r}
+```{r load-libraries}
 library(tidyverse)
 library(tidyboot)
 
@@ -13,7 +13,7 @@ theme_set(theme_classic(base_size = 14))
 
 ```
 
-```{r}
+```{r teaching}
 teach_learn_p <- function(p , n) {
   1 - (1-p) ^ n
 }
@@ -27,11 +27,11 @@ teach_learn_prop <- function(p) {
 
 teach_props <- map_df(seq(.25,.75,.25), ~teach_learn_prop(.x))
 
-ggplot(teach_props, aes(x = n, y = prob, color = as.factor(p))) + 
-  geom_line()
+# ggplot(teach_props, aes(x = n, y = prob, color = as.factor(p))) + 
+#   geom_line()
 ```
 
-```{r xsit}
+```{r xsit, eval = F, include = F}
 generate_xsit_stims <- function(C = 4, M = 16, n = 100) {
   
   stims <- tibble(item = 2:M, count = 0) %>%
@@ -129,12 +129,12 @@ crossit_probs <- function(p, C, M) {
 
 cross_props <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, C, M))
 
-ggplot(cross_props, aes(x = n, y = prob, color = as.factor(p))) + 
-  geom_line()
+# ggplot(cross_props, aes(x = n, y = prob, color = as.factor(p))) + 
+#   geom_line()
 ```
 
 personalized communication
-```{r}
+```{r setup-communication} 
 MAX_DELAY <- 10
 U <- 100
 
@@ -244,7 +244,66 @@ act_u <- function(delay, k, n, p = .6) {
 }
 ```
 
-```{r simulate}
+```{r propose-but-verify}
+generate_propose_stims <- function(C = 4, M = 16, n = 100) {
+  replicate(n, enframe(sample(2:M, C - 1)), simplify = F) %>%
+    bind_rows(.id = "trial") %>%
+    select(-name) %>%
+    rename(object = value) %>%
+    mutate(trial = as.numeric(trial)) %>%
+    bind_rows(tibble(trial = 1:n, object = 1))
+}
+
+propose_but_verify <- function(p = .6, C = 4, M = 16, n = 100) {
+  stims <- generate_propose_stims(C, M, n)
+  
+  guess <- 0
+  trial <- 0
+  
+  for(i in 1:n) {
+    if(guess == 1) {
+      trial <- i -1
+      break
+    }
+    
+    trial_stims <- stims %>%
+      filter(trial == i)
+    
+    if(!guess %in% trial_stims) {
+      selected <- sample(trial_stims$object, 1)
+      if(rbinom(1, 1, p))
+        guess <- selected
+      else
+        guess <- 0
+    }
+    
+  }
+  
+  return(trial)
+}
+
+pbv_samples <- function(reps = 5000, p = .6, C = 4, M = 16, n = 100) {
+  replicate(reps, propose_but_verify(p, C, M, n)) %>%
+    enframe() %>%
+    select(-name) %>%
+    mutate(p = p) %>%
+    rename(n = value)
+}
+
+pbv_props <- map(c(.25, .5, .75), ~pbv_samples(p = .x)) %>%
+  bind_rows() %>%
+  group_by(p, n) %>%
+  summarise(prob = n()) %>%
+  complete(p, n, fill = list(prob = 0)) %>%
+  arrange(p, n) %>%
+  mutate(prob = prob/sum(prob)) %>%
+  mutate(prob = cumsum(prob)) 
+
+# ggplot(pbv_props, aes(x = n, y = prob, color = as.factor(p))) + 
+#   geom_line()
+```
+
+```{r simulate-communcation}
 MAX_DELAY <- 4
 
 communication_probs <- function(p) {
@@ -303,16 +362,11 @@ unknown_remaining(0, 1, teach_counts) %>%
 
 
 communication_props <- map_df(c(.25, .5, .75), ~communication_probs(.x))
+```
 
 
-cross_props_2_24 <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, 2, 24))
-cross_props_4_24 <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, 4, 24))
-cross_props_6_24 <- map_df(seq(.25,.75,.25), ~crossit_probs(.x, 6, 24))
 
-cross_props <- bind_cols(cross_props_2_16, cross_props_6_16) %>%
-  mutate(type="xsit")
-
-
+```{r plot}
 all_props <- communication_props %>%
   mutate(type = "Communication") %>% 
   rename(n = trial) %>%
@@ -320,6 +374,11 @@ all_props <- communication_props %>%
   bind_rows(mutate(cross_props_2_24, type = "XSit: 2 competitors")) %>%
   bind_rows(mutate(cross_props_6_24, type = "XSit: 6 competitors")) %>%
   mutate(type = factor(type, levels = c("Teaching", "Communication", "XSit: 2 competitors", "XSit: 6 competitors")))
+  bind_rows(mutate(teach_props, type = "teaching")) %>%
+#  bind_rows(mutate(cross_props, type = "xsit")) %>%
+  bind_rows(mutate(pbv_props, type = "pbv")) %>%
+  mutate(type = factor(type, levels = c("teaching", "communication", 
+                                         "pbv")))
 
 
 ggplot(all_props, aes(x = n, y = prob, color = as.factor(p))) + 
