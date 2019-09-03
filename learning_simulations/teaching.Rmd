@@ -8,6 +8,7 @@ editor_options:
 ```{r load-libraries}
 library(tidyverse)
 library(tidyboot)
+library(DescTools)
 
 theme_set(theme_classic(base_size = 14))
 
@@ -212,15 +213,16 @@ propose_but_verify <- function(p = .6, C = 4, M = 16, n = 100) {
   
   for(i in 1:n) {
     if(guess == 1) {
-      trial <- i -1
+      trial <- i - 1
       break
     }
     
     trial_stims <- stims %>%
-      filter(trial == i)
+      filter(trial == i) %>%
+      pull(object)
     
     if(!guess %in% trial_stims) {
-      selected <- sample(trial_stims$object, 1)
+      selected <- sample(trial_stims, 1)
       if(rbinom(1, 1, p))
         guess <- selected
       else
@@ -232,25 +234,84 @@ propose_but_verify <- function(p = .6, C = 4, M = 16, n = 100) {
   return(trial)
 }
 
-pbv_samples <- function(reps = 5000, p = .6, C = 4, M = 16, n = 100) {
-  replicate(reps, propose_but_verify(p, C, M, n)) %>%
+propose_but_verify <- function(p = .6, C = 4, M = 16, n = 100, 
+                                        nguesses = 4) {
+  stims <- generate_propose_stims(C, M, n)
+  
+  guesses <- 0
+  trial <- 0
+  
+  for(i in 1:n) {
+    
+    if(length(guesses) == 1 && guesses == 1) {
+      trial <- i
+      break
+    }
+    
+    trial_stims <- stims %>%
+      filter(trial == i) %>%
+      pull(object)
+    
+    matches <- intersect(guesses, trial_stims)
+    
+    if(is_empty(matches)) {
+      selected <- sample(trial_stims, min(nguesses, length(trial_stims)))
+      
+      kept <- selected[as.logical(rbinom(length(selected), 1, p))]
+                         
+      if(is_empty(kept))
+        guesses <- 0
+      else
+        guesses <- kept
+    } else {
+      guesses <- matches
+    }
+    
+  }
+  
+  return(trial)
+}
+
+
+pbv_samples <- function(reps = 1000, p = .6, C = 4, M = 16, n = 100, 
+                        nguesses = 1) {
+  replicate(reps, propose_but_verify(p, C, M, n, nguesses)) %>%
     enframe() %>%
     select(-name) %>%
     mutate(p = p) %>%
     rename(n = value)
 }
 
-pbv_props <- map(c(.25, .5, .75), ~pbv_samples(p = .x)) %>%
+pbv_props_4 <- map(c(.25, .5, .75), ~pbv_samples(p = .x, nguesses = 4)) %>%
   bind_rows() %>%
   group_by(p, n) %>%
   summarise(prob = n()) %>%
-  complete(p, n, fill = list(prob = 0)) %>%
+  complete(n = full_seq(1:100, 1), p, fill = list(prob =0)) %>%
   arrange(p, n) %>%
   mutate(prob = prob/sum(prob)) %>%
   mutate(prob = cumsum(prob)) 
 
-# ggplot(pbv_props, aes(x = n, y = prob, color = as.factor(p))) + 
-#   geom_line()
+
+pbv_props_1 <- map(c(.25, .5, .75), ~pbv_samples(p = .x, nguesses = 1)) %>%
+  bind_rows() %>%
+  group_by(p, n) %>%
+  summarise(prob = n()) %>%
+  complete(n = full_seq(1:100, 1), p, fill = list(prob =0)) %>%
+  arrange(p, n) %>%
+  mutate(prob = prob/sum(prob)) %>%
+  mutate(prob = cumsum(prob)) 
+
+AUC(pbv_props_1$prob, pbv_props_4)
+
+all_pbv_props <- pbv_props_1 %>%
+  mutate(nguesses = 1) %>%
+  bind_rows(mutate(pbv_props_4, nguesses = 4))
+
+ggplot(all_pbv_props, aes(x = n, y = prob, color = as.factor(p))) + 
+  geom_line(aes(linetype = as.factor(nguesses))) + 
+  scale_color_brewer(palette = "Set1")
+
+ggsave("pbvs.pdf")
 ```
 
 ```{r simulate-communcation}
