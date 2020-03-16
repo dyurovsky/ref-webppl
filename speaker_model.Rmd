@@ -34,90 +34,37 @@ theme_set(theme_bw(base_size = 14) + theme(panel.grid = element_blank(),
 
 ### Run Model (or read in saved copy below)
 ```{r}
-library(RCurl)
-full_implicit <- read.csv(text =getURL("https://cdn.jsdelivr.net/gh/benjamincmorris/reference-game/turk/2017.5.9_sender_full/5.9_data_anon.csv"))
 
-all_data_dropped <- full_implicit %>% filter(toBeDropped==0)
+full_explicit <- read_csv("empirical_data/1.30.2019_explicit_model.csv")
 
-tmp <- exp3_dropped %>% group_by(condition, method) %>%
-  filter(duration<15000) %>%
-  filter(responseCorrect==1) %>%
-  mutate(hyp_score= ceiling(11-(duration*1.7/1000))*10) %>%
-  summarize(medDur = median(duration), sdDur = sd(duration),
-            meanScore=mean(score), n =n(), avgCorr = mean(responseCorrect),
-            meanHypScore = mean(hyp_score)) 
+all_data_dropped <- full_explicit %>% filter(toBeDropped==0)
 
-implicit_points <- tmp %>%
-  select(condition, method, meanScore, meanHypScore) %>%
-  gather(type, Score, meanScore, meanHypScore) %>%
-  spread(method, Score)
-
-tmp %>%
-  gather(type, Score, meanScore, meanHypScore) %>%
-  mutate(Score = if_else(Score < 0, 0, Score))  %>%
-  mutate(method=factor(method, levels=c("label","click", "label_click"))) %>%
-  ggplot(aes(x=method))+
-  geom_bar(stat="identity", aes(x=method, y=Score, fill=method)) +
-  # geom_bar(aes(x=method, y=medDur))+
-  facet_grid(type~speed) +
-  theme_bw()
-#100_30 would translate to about 65 speed
-
-empiricalImplicitVocabs <- all_data %>%
-  group_by(ldf_num, condition, partnersExposure, realLabel, exposureRate) %>%
-  summarize(testCorrect=first(testCorrect)) %>%
-  # left_join(implicit_points %>% filter(type=='meanScore')) %>%
-  # rename(exposures=exposureRate,
-  #        label_points=speech,
-  #        click_points= gesture,
-  #        teach_points = teach,
-  #        label= realLabel) %>%
-  ungroup() %>%
-  mutate(known = ifelse(testCorrect == 1, TRUE, FALSE),
-         partnersExposure = ifelse(partnersExposure=='Perfect', 2, 
-                                   ifelse(partnersExposure=='None', 0, .5)),
-         condition=as.factor(condition))  %>%
-  as.data.frame()
   
-empiricalVocabs <- all_data %>%
-  # filter(toBeDropped != 1) %>%
+empiricalExplicitVocabs <- all_data_dropped %>%
   group_by(ldf_num, condition, partnersExposure, realLabel, exposureRate, trueClickPoints, trueLabelPoints) %>%
   summarize(testCorrect=first(testCorrect)) %>%
   rename(exposures=exposureRate,
          label= realLabel) %>%
   ungroup() %>%
   mutate(known = ifelse(testCorrect == 1, TRUE, FALSE),
-         partnersExposure = ifelse(partnersExposure=='Perfect', 2, 
-                                   ifelse(partnersExposure=='None', 0, 1)),
+         pointCost = 100 - trueClickPoints,
+         speechCost = 100- trueLabelPoints,
          condition=as.factor(condition))  %>%
   as.data.frame()
 
  
  
-# ##read in empirical data to feed model
-# empiricalVocabsConds<- read.csv("empiricalVocabsFull.csv") %>%
-  # select(-X)
+
 # # ### this line runs webppl model
 t1 <- proc.time()
-# outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
-# outcomes_implicit<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
-outcomes_exp_1.30<-webppl(program_file = "test.wppl.js", data=empiricalVocabs2, data_var = "empiricalVocabs")
+outcomes<-webppl(program_file = "speaker_clean.wppl", data=empiricalExplicitVocabs, data_var = "empiricalVocabs")
 
-empiricalVocabs2 <- empiricalVocabs %>% mutate(speechCost = 100-trueLabelPoints,
-                                               pointCost = 100-trueClickPoints)
-outcomes_exp_1.30_oldModel<-webppl(program_file = "old_speaker.wppl", data=empiricalVocabs2, data_var = "empiricalVocabs")
 
-proc.time() - t1
-# # 
-# # ### clean up data from model
 
-gamePredictions_1.30 <-outcomes_exp_1.30 %>%
+gamePredictions_1.30 <-outcomes %>%
   unnest(predictions,  gameTrials) %>%
     cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
 
-gamePredictions_1.30_oldModel <-outcomes_exp_1.30_oldModel %>%
-  unnest(predictions, pred_perf_teaching, gameTrials) %>%
-    cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
 
 ```
 
@@ -178,14 +125,14 @@ ggplot(indiv_predicted, aes(x = predicted, y = duration)) +
 # all_data_luce2 <- full_implicit %>%
 #   filter(ldf_num %in% gamePredictions_luce2$me) %>%
   
-all_data_model <- all_data %>%
-  filter(ldf_num %in% gamePredictions_1.30_oldModel$me) %>%
+all_data_model <- all_data_dropped %>%
+  filter(ldf_num %in% gamePredictions_1.30$me) %>%
   select(-partnersExposure) %>%
   filter(toBeDropped != 1) %>%
   group_by(ldf_num, exposureRate, targetObjectName) %>%
   mutate(appearance = if_else(trialnum == min(trialnum), 1,
                               if_else(trialnum == max(trialnum), 3, 2))) %>%
-  left_join(gamePredictions_1.30_oldModel, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance')) %>%
+  left_join(gamePredictions_1.30, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance')) %>%
   mutate(method=ifelse(method=='click', "point",
                         ifelse(method=="label","speak", "teach"))) %>%
   as.data.frame(.)
@@ -393,12 +340,12 @@ prop_methods_exposures %>%
 
 #Plot of Model Predictions vs. Empirical Data
 ```{r}
-prop_methods <- all_data_model_new %>%
+prop_methods <- all_data_model %>%
   filter(toBeDropped != 1) %>%
   # rename(condition=speed) %>%
   # filter(partnersExposure == 0) %>%
   ungroup() %>%
-  select(condition,ldf_num, partnersExposure, appearance,method,predictions) %>%
+  select(condition,ldf_num, partnersExposure, appearance, method, predictions) %>%
   # select(condition,ldf_num, partnersExposure, appearance,method) %>%
   gather(isEmpirical, method, -condition, -partnersExposure, -ldf_num, -appearance) %>%
   group_by(condition, ldf_num,partnersExposure, appearance,isEmpirical, method) %>%
@@ -406,7 +353,7 @@ prop_methods <- all_data_model_new %>%
   group_by(condition, ldf_num,partnersExposure, isEmpirical, appearance) %>%
   mutate(n = n/sum(n)) %>%
   ungroup() %>%
-  mutate(method = as.factor(method)) %>%
+  mutate(method = as.factor(method)) %>% 
   tidyr::complete(nesting(condition, ldf_num, partnersExposure), isEmpirical, appearance, method, fill = list(n = 0)) %>%
   group_by(condition, partnersExposure, method, isEmpirical, appearance) %>%
   summarise(mean = mean(n), se = seprop(n))
@@ -434,6 +381,79 @@ model_fit <- prop_methods %>%
 # 
 # ggplot(residuals, aes(x =as.factor(partnersExposure), y = residual, color = method)) + 
 #   geom_point()
+
+----
+all_data_model <- all_data %>%
+  filter(ldf_num %in% gamePredictions_1.30$me) %>%
+  # select(-partnersExposure) %>%
+  filter(toBeDropped != 1) %>%
+  group_by(ldf_num, exposureRate, targetObjectName) %>%
+  mutate(appearance = if_else(trialnum == min(trialnum), 1,
+                              if_else(trialnum == max(trialnum), 3, 2))) %>%
+  left_join(gamePredictions_1.30, by=c('ldf_num'='me', 'realLabel'='gameTrials', 'appearance')) %>%
+  mutate(method=ifelse(method=='click', "point",
+                        ifelse(method=="label","speak", "teach"))) %>%
+  as.data.frame(.)
+
+prop_methods <- all_data_model %>%
+  filter(toBeDropped != 1) %>%
+  ungroup() %>%
+  select(condition,ldf_num, partnersExposure, appearance,method,predictions) %>%
+  # select(condition,ldf_num, partnersExposure, appearance,method) %>%
+  gather(isEmpirical, method, -condition, -partnersExposure, -ldf_num, -appearance) %>%
+  group_by(condition, ldf_num,partnersExposure, appearance,isEmpirical, method) %>%
+  summarise(n = n()) %>%
+  group_by(condition, ldf_num,partnersExposure, isEmpirical, appearance) %>%
+  mutate(n = n/sum(n)) %>%
+  ungroup() %>%
+  mutate(method = as.factor(method)) %>%
+  tidyr::complete(nesting(condition, ldf_num, partnersExposure), isEmpirical, appearance, method, fill = list(n = 0)) %>%
+  group_by(condition, partnersExposure, method, isEmpirical, appearance) %>%
+  summarise(mean = mean(n), se = seprop(n))
+
+
+###direct plot of model fit
+model_fit <- prop_methods %>%
+  ungroup() %>%
+  mutate(isEmpirical= ifelse(isEmpirical=='method', 'empirical', isEmpirical)) %>%
+  unite(mean_new, mean, se) %>%
+  spread(isEmpirical, mean_new) %>% 
+  separate(empirical, c('mean_emp', 'se_emp'), '_') %>%
+  separate(predictions, c('mean_pred', 'se_pred'), '_') %>%
+  mutate_if(grepl('_', names(.)), as.numeric) %>%
+  rename(mean_pred_plot=mean_pred,
+         se_pred_plot=se_pred)
+----
+
+#plot of model predictions vs empirical game data
+model_fit %>%
+  ggplot(aes(x=mean_pred_plot, y=mean_emp, color=method,
+             shape=as.factor(partnersExposure),group=appearance,
+             alpha=condition,
+             label = appearance)) +
+  geom_point(aes(size=as.factor(appearance))) +
+  geom_abline(intercept =0, slope=1) +
+  geom_linerange(aes(ymax = mean_emp + se_emp,
+                     ymin = mean_emp - se_emp),
+                 alpha=.4) +
+  geom_errorbarh(aes(xmin = mean_pred_plot - se_pred_plot,
+                     xmax = mean_pred_plot + se_pred_plot),
+                 alpha = .4)+
+  # geom_text(aes(label=appearance),hjust=0, vjust=0) + 
+  # facet_grid(.~condition)+
+  coord_cartesian(xlim=c(0,.8), ylim=c(0,.8)) + 
+  labs(y="Empirical Proportion of Trials", x="Model Predictions") +
+  scale_color_manual(values=modality.colors, name='Modality', labels=c("Gesture", "Speech", "Teach")) +
+  scale_shape_manual(values=c(15,17,16),name="Partner's Exposure", labels=c("None", "Same Amount", "Twice as Much")) + 
+  scale_alpha_manual(values=c(.4, 1), name="Utility Condition", labels=c("Low Relative Cost", "Higher Relative Cost")) +
+  scale_size_manual(values=c(1,2,3), name="Appearance", labels=c("First", "Second", "Third"))+
+  theme(legend.direction = "vertical", 
+        legend.position = "right",
+        legend.key.size = unit(.15, 'lines'),
+        legend.title=element_text(size=7),
+        legend.text=element_text(size=6),
+        legend.spacing = unit(0, "in"),
+        legend.box.spacing = unit(0, "in"))
 
 
 #plot of model predictions vs empirical game data
@@ -554,4 +574,93 @@ empiricalImplicitVocabs %>%
 ```
 
 
+
+
+# old code for reading in the implicit experiments
+```{r}
+library(RCurl)
+full_implicit <- read.csv(text =getURL("https://cdn.jsdelivr.net/gh/benjamincmorris/reference-game/turk/2017.5.9_sender_full/5.9_data_anon.csv"))
+
+all_data_dropped <- full_implicit %>% filter(toBeDropped==0)
+
+tmp <- all_data_dropped %>% group_by(condition, method) %>%
+  # filter(duration<15000) %>%
+  filter(responseCorrect==1) %>%
+  mutate(hyp_score= ceiling(11-(duration*1.7/1000))*10) %>%
+  summarize(medDur = median(duration), sdDur = sd(duration),
+            meanScore=mean(score), n =n(), avgCorr = mean(responseCorrect),
+            meanHypScore = mean(hyp_score)) 
+
+implicit_points <- tmp %>%
+  select(condition, method, meanScore, meanHypScore) %>%
+  gather(type, Score, meanScore, meanHypScore) %>%
+  spread(method, Score)
+
+tmp %>%
+  gather(type, Score, meanScore, meanHypScore) %>%
+  mutate(Score = if_else(Score < 0, 0, Score))  %>%
+  mutate(method=factor(method, levels=c("label","click", "label_click"))) %>%
+  ggplot(aes(x=method))+
+  geom_bar(stat="identity", aes(x=method, y=Score, fill=method)) +
+  # geom_bar(aes(x=method, y=medDur))+
+  facet_grid(type~speed) +
+  theme_bw()
+#100_30 would translate to about 65 speed
+
+empiricalImplicitVocabs <- all_data %>%
+  group_by(ldf_num, condition, partnersExposure, realLabel, exposureRate) %>%
+  summarize(testCorrect=first(testCorrect)) %>%
+  # left_join(implicit_points %>% filter(type=='meanScore')) %>%
+  # rename(exposures=exposureRate,
+  #        label_points=speech,
+  #        click_points= gesture,
+  #        teach_points = teach,
+  #        label= realLabel) %>%
+  ungroup() %>%
+  mutate(known = ifelse(testCorrect == 1, TRUE, FALSE),
+         partnersExposure = ifelse(partnersExposure=='Perfect', 2, 
+                                   ifelse(partnersExposure=='None', 0, .5)),
+         condition=as.factor(condition))  %>%
+  as.data.frame()
+  
+empiricalVocabs <- all_data %>%
+  # filter(toBeDropped != 1) %>%
+  group_by(ldf_num, condition, partnersExposure, realLabel, exposureRate, trueClickPoints, trueLabelPoints) %>%
+  summarize(testCorrect=first(testCorrect)) %>%
+  rename(exposures=exposureRate,
+         label= realLabel) %>%
+  ungroup() %>%
+  mutate(known = ifelse(testCorrect == 1, TRUE, FALSE),
+         partnersExposure = ifelse(partnersExposure=='Perfect', 2, 
+                                   ifelse(partnersExposure=='None', 0, 1)),
+         condition=as.factor(condition))  %>%
+  as.data.frame()
+
+ 
+ 
+# ##read in empirical data to feed model
+# empiricalVocabsConds<- read.csv("empiricalVocabsFull.csv") %>%
+  # select(-X)
+# # ### this line runs webppl model
+t1 <- proc.time()
+# outcomes<-webppl(program_file = "speaker.wppl", data=empiricalVocabsConds, data_var = "empiricalVocabs")
+# outcomes_implicit<-webppl(program_file = "speaker.wppl", data=empiricalImplicitVocabs, data_var = "empiricalVocabs")
+outcomes_exp_1.30<-webppl(program_file = "test.wppl.js", data=empiricalVocabs2, data_var = "empiricalVocabs")
+
+empiricalVocabs2 <- empiricalVocabs %>% mutate(speechCost = 100-trueLabelPoints,
+                                               pointCost = 100-trueClickPoints)
+outcomes_exp_1.30_oldModel<-webppl(program_file = "old_speaker.wppl", data=empiricalVocabs2, data_var = "empiricalVocabs")
+
+proc.time() - t1
+# # 
+# # ### clean up data from model
+
+gamePredictions_1.30 <-outcomes_exp_1.30 %>%
+  unnest(predictions,  gameTrials) %>%
+    cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
+
+gamePredictions_1.30_oldModel <-outcomes_exp_1.30_oldModel %>%
+  unnest(predictions, pred_perf_teaching, gameTrials) %>%
+    cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
+```
 
