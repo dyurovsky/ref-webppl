@@ -68,7 +68,57 @@ generate_xsit_stims <- function(C = 4, M = 16, n = 100) {
     bind_rows(tibble(item = 1, trial = 1:n, count = trial)) %>%
     filter(trial > 0)
 }
-  
+
+# xsit_conditions <- crossing(C = c(1, 2, 4),
+#                             M = c(8, 64, 256),
+#                             p = seq(.25, 1, .01)) 
+# 
+# xsit_ns <- xsit_conditions %>%
+#   rowwise() %>%
+#   mutate(n = xsit_min_n(p, C, M, .75))
+# 
+#   
+# ns <- xsit_conditions %>%
+#   left_join(teach_ns) %>%
+#   mutate(type = "teach") %>%
+#   bind_rows(xsit_ns %>% mutate(type = "xsit"))
+# 
+# ggplot(ns, aes(x = p, y = n, color = type)) + 
+#   facet_grid(C ~ M) +
+#   geom_point()
+# 
+# 
+# plot_tmp <- ns %>% 
+#   mutate(howHard = if_else(C==1 & M == 8, "easiest", "NA"),
+#          howHard = if_else(C==4 & M == 256, "hardest", howHard)) %>% 
+#   select(-C, -M) %>%
+#   filter(howHard != "NA") %>%
+#   spread(howHard, n) %>% 
+#   mutate(type = factor(type, levels=c("xsit","teach"),
+#                             labels=c("XSL","Teaching"), ordered=TRUE)) %>%
+#   mutate(hypCommunication = easiest + sample(c(1,2), 1))
+# 
+# label_data <- tibble(p = c(.75, .85, .85), 
+#                      type = c("XSL", "Teaching", "Communication"), easiest = c(5.5, 1.5, 2.35))
+# 
+# 
+# 
+# ggplot(plot_tmp, aes(x = p, y = easiest, label=type)) + 
+#   geom_ribbon(data= (plot_tmp %>% filter(type=="XSL")), aes(x=p,ymin=easiest, ymax=hardest), 
+#               color="grey", alpha=.5, fill="darkgrey") +
+#   geom_ribbon(data= (plot_tmp %>% filter(type=="Teaching")), aes(x=p,ymin=easiest, ymax=easiest), color="green3") +
+#   #hypotheszied teaching data, v rough for hypothetical findings plot
+#   geom_line(data= (plot_tmp %>% filter(type=="Teaching")), aes(x=p,y=hypCommunication), color="red") +
+#   labs(x="Learning Parameter", y = "Model Estimated Number of \n Exposures to Learn One Word") +
+#   geom_text(data = label_data, color=c('darkgrey', "green3", "red"))
+# 
+# 
+# 
+# 
+# ggplot(xsit_ns, aes(x = p, y = n, color = as.factor(M))) + 
+#   facet_grid(. ~ C) +
+#   geom_point() 
+
 
 C <- 4
 M <- 16
@@ -381,13 +431,21 @@ unknown_remaining(0, 1, teach_counts) %>%
   mutate(p = p)
 }
 
+
+
 communication_props <- map_df(c(.25, .5, .75), ~communication_probs(.x))
 ```
 
+
+
 ```{r plot}
 all_props <- communication_props %>%
-  mutate(type = "communication") %>% 
+  mutate(type = "Communication") %>% 
   rename(n = trial) %>%
+  bind_rows(mutate(teach_props, type = "Teaching")) %>%
+  bind_rows(mutate(cross_props_2_24, type = "XSit: 2 competitors")) %>%
+  bind_rows(mutate(cross_props_6_24, type = "XSit: 6 competitors")) %>%
+  mutate(type = factor(type, levels = c("Teaching", "Communication", "XSit: 2 competitors", "XSit: 6 competitors")))
   bind_rows(mutate(teach_props, type = "teaching")) %>%
 #  bind_rows(mutate(cross_props, type = "xsit")) %>%
   bind_rows(mutate(pbv_props, type = "pbv")) %>%
@@ -397,7 +455,60 @@ all_props <- communication_props %>%
 
 ggplot(all_props, aes(x = n, y = prob, color = as.factor(p))) + 
   geom_line(aes(linetype = type)) + 
-  scale_color_brewer(palette = "Set1")
+  scale_color_brewer(palette = "Set1") +
+  scale_linetype_manual(values=c("solid", "dotdash", "dashed"))
+
+#ben's plot
+# xsit is range of cases 2 competitors to 6
+  # two xsits for .25 and .75 p value
+# teachinga nd comm show range of ps, range of learning paramaeters
+
+all_props %>%
+  filter(p != .5) %>%
+  # mutate(p =  paste0("learning parameter = ", p)) %>%
+  ggplot(aes(x = n, y=prob, color = type)) + 
+  geom_line() +
+  # geom_line(aes(linetype = as.factor(p))) + 
+  labs(y="Probability of Learning", x="Number of Exposures") +
+  # scale_linetype_manual(values=c("dotdash", "solid")) +
+  scale_color_manual(values=c("green3", "red", "blue3", "lightblue")) +
+  facet_grid(p~.)
+  
+
+all_props %>%
+  filter(p != .5,
+         !grepl("xsit",type)) %>%
+  spread(p, prob) %>%
+  ggplot(aes(x = n, color = type, fill=type)) + 
+  geom_ribbon(data= cross_props %>% filter(p == .25), aes(x = n, ymin = prob1, ymax=prob), fill="grey", alpha=.5) +
+  geom_ribbon(data= cross_props %>% filter(p == .75), aes(x = n, ymin = prob1, ymax=prob), fill="darkgrey", alpha=.5) +
+  geom_ribbon(aes(ymin=`0.25`, ymax=`0.75`), alpha=.8) +
+  # facet_grid(p~.) +
+  # geom_line(aes(linetype = as.factor(p))) + 
+  labs(y="Probability of Learning", x="Number of Exposures") +
+  scale_linetype_manual(values=c("solid", "dotdash", "dashed"))+
+  scale_color_manual(values=c("red", "green3", "darkgrey"))+
+  scale_fill_manual(values=c("green3", "red", "darkgrey"))
+
+
+all_props_spread <-  all_props %>%
+  spread(p, prob)
+
+#range of learning p values for all things...
+# 2 xsit models
+
+ggplot(all_props_spread, aes(x = n, color = type, fill=type)) + 
+  geom_ribbon(data= all_props_spread %>% filter(grepl("xsit",type)), aes(x = n, ymin = `0.25`, ymax=`0.75`), alpha=.5) +
+  geom_ribbon(data= all_props_spread %>% filter(grepl("comm",type)), aes(x = n, ymin = `0.25`, ymax=`0.75`), alpha=.7) +
+  geom_ribbon(data= all_props_spread %>% filter(grepl("teach",type)), aes(x = n, ymin = `0.25`, ymax=`0.75`), alpha=.8) +
+  # facet_grid(p~.) +
+  # geom_line(aes(linetype = as.factor(p))) + 
+  labs(y="Probability of Learning", x="Number of Exposures") +
+  scale_color_manual(values=c("red", "green3", "grey", "darkgrey")) +
+  scale_fill_manual(values=c("red", "green3", "lightgrey","darkgrey"))
+
+
+
 
 ```
 

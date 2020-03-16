@@ -15,6 +15,9 @@ VOCAB_SIZE <- 9
 PER_TRIAL <- 4
 OCCURRENCES <- 3
 
+#5.7.2019 
+  # maybe this learning parameter is analagous to alpha in the xsl model
+  # this is on a 0-1 scale, transform alpha (0-infinity) to that\
 p <- .56
 
 words <- 1:VOCAB_SIZE
@@ -42,7 +45,9 @@ train <- function(p) {
            occurrence = occurrence)
   } 
   
-  map_df(1:nrow(trials), ~do_trial(trials %>% slice(.x)))
+  walk(1:nrow(trials), ~do_trial(trials %>% slice(.x)))
+  
+  return(vocab)
   
 }
 
@@ -52,9 +57,14 @@ outcomes <- replicate(40, train(p), simplify = F) %>%
 
 
 #get mean learn prob by occurence
+# outcomes %>%
+#   group_by(occurrence) %>%
+#   summarise_at(vars(response, prob), mean)
+
 outcomes %>%
-  group_by(occurrence) %>%
-  summarise_at(vars(response, prob), mean)
+  group_by(word) %>%
+  summarise_at(vars(prob), mean)
+
 ```
 
 ```{r xsit}
@@ -66,7 +76,7 @@ ENCODED_OBJS <- 3
 
 alpha <- 1
 
-p <- .56
+# p <- .56
 
 words <- 1:VOCAB_SIZE
 
@@ -93,18 +103,16 @@ train <- function(p) {
       sample(min(ENCODED_OBJS, length(.)))
 
     assocs <- vocab %>% 
-      #scoping issue fixed here?
-        #filter(word == word, object %in% objects) %>%     #old line with scoping error
       filter(word == heardWord, object %in% objects) %>%
       mutate(assoc = assoc + 1) %>%
       pull(assoc)
       
-    #single &, not double && here
     vocab[vocab$word==heardWord & vocab$object %in% objects, "assoc"] <<- assocs 
   } 
   walk(1:nrow(trials), ~do_trial(trials %>% slice(.x)))
   
   return(vocab)
+
 }
 
 
@@ -120,7 +128,6 @@ new_vocab %>%
   mutate(prob = correct_sim / sum_sim) %>%
   summarise(prob = mean(prob)) %>%
   tidyboot_mean(prob)
-  
 
 
 mean_vocab <- new_vocab %>%
@@ -129,5 +136,6 @@ mean_vocab <- new_vocab %>%
 
 ggplot(mean_vocab, aes(x = object, y = word, fill = assoc)) + 
   geom_tile()
+
 
 ```
