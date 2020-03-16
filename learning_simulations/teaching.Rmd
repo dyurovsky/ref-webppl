@@ -9,6 +9,7 @@ editor_options:
 library(tidyverse)
 library(tidyboot)
 library(DescTools)
+library(here)
 
 theme_set(theme_classic(base_size = 14))
 
@@ -20,7 +21,7 @@ teach_learn_p <- function(p , n) {
 }
 
 teach_learn_prop <- function(p) {
-  tibble(n = 1:50, prob = map(1:50, ~teach_learn_p(p, .x)) 
+  tibble(n = 1:100, prob = map(1:100, ~teach_learn_p(p, .x)) 
          %>% unlist()) %>%
     mutate(p = p)
 }
@@ -30,6 +31,16 @@ teach_props <- map_df(seq(.25,.75,.25), ~teach_learn_prop(.x))
 
 # ggplot(teach_props, aes(x = n, y = prob, color = as.factor(p))) + 
 #   geom_line()
+```
+
+```{r teaching_cache, eval = F}
+teach_props <- map_df(seq(.05, 1, .05), ~teach_learn_prop(.x))
+
+teach_aucs <- teach_props %>%
+  group_by(p) %>%
+  summarise(auc = AUC(n, prob))
+
+write_csv(teach_props, here("cached_data/teach_props.csv"))
 ```
 
 ```{r xsit, eval = F, include = F}
