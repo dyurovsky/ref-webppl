@@ -1,0 +1,303 @@
+var successValue = 100
+
+var actions = ["speak", "point", "teach"];
+
+//var alpha_prior = Cauchy({location: 1, scale: 2})
+var alpha_prior =  Gamma({shape: 1, scale: 1})
+var discount_prior = Uniform({a: 0, b: 1})
+// var alpha = 1 //sample(Cauchy({location: 1, scale: 2}))
+// var discountParam = .5 //sample(Uniform({a: 0, b: 1}))
+
+var utility = function(outcome, pointCost, speechCost) {
+  var table = {
+    point_success: successValue - pointCost,
+    speak_success: successValue - speechCost,
+    failure_speaker: 0,
+    failure_receiver: 0,
+    teach_success: successValue - speechCost - pointCost,
+    teach_failure: 0,
+  };
+  return Math.log(table[outcome]+.01);
+};
+
+var unknownProb = function(times, prob) {
+  Binomial({p:prob, n:times}).score(0)
+}
+
+var knownProb = function(times, prob) {
+  Math.log(1-Math.exp(unknownProb(times, prob)))
+}
+
+var vocabProb = function(vocabulary, prob) {
+  var totalProb = map(function(word) {
+    word.known ? knownProb(word.exposures, prob) :
+     unknownProb(word.exposures, prob)
+  }, vocabulary)
+
+  return sum(totalProb)
+}
+
+
+// used to generate a simulation of partner's exposure + knowledge, based on what is known
+var initializeVocab = function(trials, learnProb, partnerExposure) {
+  var learnedArray = []
+
+  map(function(element) {
+    var inferredPartnerExposures = Math.floor(element.exposures*partnerExposure)
+    var newWord = {
+      label: element.label,
+      exposures: inferredPartnerExposures,
+      // known: inferredPartnerExposures==0 ? 0 : Math.exp(knownProb(inferredPartnerExposures, learnProb))
+      // use below line to initialize a partner with perfect knowledge in the 'twice as much' exposure condition
+      known: inferredPartnerExposures==0 ? 0 :
+        partnerExposure==1 ? Math.exp(knownProb(inferredPartnerExposures, learnProb)) :
+          partnerExposure==2 ? Math.exp(knownProb(inferredPartnerExposures, learnProb)) :
+            null
+
+     };
+     learnedArray.push(newWord)
+  }, trials)
+  return learnedArray
+}
+
+var training = function(trials, learnProb) {
+
+  map(function(trial) {
+    var isknown = sample(Bernoulli({p: learnProb, n:trial.exposures}))
+
+    return {label: trial.label, exposures: trial.exposures, known: isknown}
+  }, trials)
+
+}
+
+var selectReferent = function(modality, referent, speakerVocab, receiverVocab) {
+  if(modality == "point") {return "point_success";}
+
+  else {
+    //get all known items from receiverVocab
+    var speakerKnows = filter(function(x) {return x.label == referent}, speakerVocab)[0].known
+
+    if(!speakerKnows) {
+      return "failure_speaker"
+    }
+    else {
+      var receiverKnows = filter(function(x) {return x.label == referent}, receiverVocab)[0].known
+      //check if referent known in vocab
+
+      if(modality == "teach") {
+        return "teach_success"
+      } else {
+        return(categorical([receiverKnows, 1-receiverKnows], ["speak_success", "failure_receiver"]));
+      }
+    }
+  }
+}
+
+
+// exponential discounting function used to offset future rewards
+var expDiscount = function(discountParam,delay) {
+  return Math.pow(discountParam, delay);
+};
+
+
+var sampleSpeakerPlanner = function() {
+
+  var act = function(speakerVocab, receiverVocab, someTrials, target, delay, discountParam, alphaParam, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching) {
+
+    return Infer({ model() {
+
+      var action = uniformDraw(actions);
+      var eu = expectedUtility(action, target, speakerVocab, receiverVocab, someTrials, delay, discountParam, alphaParam, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching);
+      // alpha/rationality parameter used here
+      factor(alphaParam * eu)
+      return action;
+    }});
+  }
+
+  var expectedUtility = function(action, target, speakerVocab, receiverVocab, someTrials, delay, discountParam, alphaParam, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching) {
+    var outcome = selectReferent(action, target, speakerVocab, receiverVocab)
+    var util = (utility(outcome, pointPoints, speechPoints)) * expDiscount(discountParam, delay)
+    var index = _.indexOf(someTrials, target);
+    var restOfTrials = (index < someTrials.length -1) ? someTrials.slice(index+1): [];
+    // var newIndex = _.indexOf(restOfTrials, target);
+    var newDelay= delay + 1
+    // if(any(function(x) {x==target}, restOfTrials)){
+    if(index == -1){
+      return util;
+    } else {
+      return util + expectation(Infer({ model() {
+        var updatedReceiver = updateVocab(receiverVocab, target, outcome, estimatedLearnProb, perfectTeaching)
+
+        var nextAction = sample(act(speakerVocab, updatedReceiver,
+          restOfTrials, target, newDelay, discountParam, alphaParam, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching))
+
+        return expectedUtility(nextAction, target, speakerVocab,
+          updatedReceiver, restOfTrials, newDelay, discountParam, alphaParam, estimatedLearnProb, pointPoints, speechPoints, perfectTeaching)
+      }}));
+    }
+  }
+
+  return { act };
+
+};
+
+
+
+var findWordandUpdate = function(word, vocab, changingKnownTo) {
+  var vocabIndex = _.findIndex(vocab, {label: word});
+  var newWord = {
+    label: vocab[vocabIndex].label,
+    exposures: vocab[vocabIndex].exposures,
+    known: changingKnownTo
+   };
+  vocab.splice(vocabIndex, 1, newWord)
+  return vocab
+}
+
+var updateVocab = function(receiverVocab, referent, outcome, estimatedProb, perfectTeaching) {
+  var otherVocab = receiverVocab.slice()
+  if(outcome =="speak_success") {
+    findWordandUpdate(referent, otherVocab, 1)
+  }
+  if(outcome =="failure_receiver") {
+   findWordandUpdate(referent, otherVocab, 0)
+  }
+  if(outcome =="teach_success") {
+    var targExp =  _.filter(otherVocab, {label: referent})[0].exposures
+    // can set this update to 1, perfect knowledge, to reflect assumption that teaching is perfect
+    perfectTeaching != 0 ? findWordandUpdate(referent, otherVocab, 1) :
+      findWordandUpdate(referent, otherVocab, Math.exp(knownProb(targExp+1, estimatedProb)))
+  }
+  // in all other cases, no need to alter because outcome is uninformative
+  return otherVocab
+}
+
+
+// grab all participants from empirical data
+var ldfs = _.uniq(
+  map(function(element) {
+    return element.ldf_num
+  }, empiricalVocabs)
+)
+
+// just a subset of participants if debugging code
+var ldfs_test = filter(function(subID) {return subID <= 3}, ldfs)
+
+var one_sample = function(alphaParam, discountParam) {
+  //console.log("discount: " + discountParam)
+  //console.log("alpha: " + alphaParam)
+  //console.log("called")
+  var outcomes = map(function(x) {
+    // load in empirical data-- vocabs, conditions, etc.
+    var myVocab = _.filter(empiricalVocabs, {ldf_num : x})
+    var pointCost = myVocab[0].pointCost
+    var speechCost =  myVocab[0].speechCost
+    var successValue = 100
+    var me = x
+    var utilityCondition = myVocab[0].condition
+    var maxTrials = myVocab.length
+
+    // estimate my learning parameter, how likely was my amount of learning given training
+    var estimatedProb = myVocab[0].estimated_p
+    // what do i know about my partner
+    //    simulate their knowledge based on what i know of their training, and how I assume they learn
+    var partnersExposure = myVocab[0].partnersExposure
+    var yourVocab = initializeVocab(myVocab, estimatedProb, partnersExposure)
+
+    var act = sampleSpeakerPlanner().act;
+    // run over trials
+    var predictingTrials = function(remainingTrials, yourVocab, startingArray, trialNum, perfectTeaching) {
+      var element = remainingTrials.shift()
+
+      var act_dist = act(myVocab, yourVocab, remainingTrials, element, 0, discountParam, alphaParam, estimatedProb, pointCost, speechCost, perfectTeaching)
+
+      //var likelihood = act_dist.score(myVocab[maxTrials - remainingTrials.length - 1].method)
+
+      //var action = sample(act_dist)
+
+      var true_action = myVocab[maxTrials - remainingTrials.length - 1].method
+
+      observe(act_dist, true_action)
+
+      var getOutcome = function(true_action) {
+
+        if(true_action != "speak") {
+          return selectReferent(true_action, element, myVocab, yourVocab)
+        }
+        else {
+          if(myVocab[maxTrials - remainingTrials.length - 1].score > 0) {
+            return "speak_success"
+          }
+          else {
+            return "failure_receiver"
+          }
+        }
+      }
+      var outcome = getOutcome(true_action)
+
+      //var newVocab = updateVocab(yourVocab, element, "speak", estimatedProb,
+        //  perfectTeaching)
+
+      startingArray.push({action: true_action}) //action
+      if(remainingTrials.length > 1000){
+        predictingTrials(remainingTrials,yourVocab,startingArray, perfectTeaching)
+      } else {return startingArray}
+    }
+
+    var predictions = predictingTrials(_.map(myVocab, "label"), yourVocab, [])
+    // return all the stuff!
+
+    return {predictions, myVocab, yourVocab, me, utilityCondition,
+      partnersExposure, estimatedProb}
+
+  }, ldfs)
+
+  outcomes
+
+  //console.log(outcomes)
+
+  //_.reduce(outcomes, function(sum, n) {return sum + n.likeliho}, 0);
+
+  //console.log(outcomes)
+
+  // var totalLikelihood = _.sum(
+  //                       _.map(
+  //                       _.flatMap(outcomes, "predictions"), "likelihood")) //+
+  //                       //alpha_prior.score(alphaParam) +
+  //                       //discount_prior.score(discountParam)
+  //
+  // totalLikelihood
+}
+
+var gaussianKernel = function(prevVal) {
+  return Gaussian({mu: prevVal, sigma: .3});
+};
+
+var modelPosterior = function() {
+  Infer({method: "MCMC", samples: 30, verbose: true,
+  //Infer({
+    model() {
+      //var alpha = uniformDrift({a:0, b:2, width: 0.05})
+      //var discount = uniformDrift({a:0, b:1, width: 0.05})
+
+      var discount = sample(discount_prior)//, {driftKernel: gaussianKernel})
+      var alpha = sample(alpha_prior)//, {driftKernel: gaussianKernel})
+      //console.log("\nalpha: " + alpha)
+      //console.log("discount: " + discount)
+      //console.log(alpha)
+      //console.log(discount)
+      //var likelihood = alpha_prior.score(alpha)
+      //var likelihood = discount_prior.score(discount)
+      var sample = one_sample(alpha, discount)
+      //console.log(likelihood)
+      //console.log("end")
+      //var likelihood = 1;
+
+      //factor(likelihood)// + Cauchy({location: 1, scale: 2}).score(alpha))
+
+      return {alpha: alpha, discount: discount}//, likelihood: (likelihood)};
+    }
+  })
+}
+
+modelPosterior()

@@ -20,54 +20,133 @@ knitr::opts_chunk$set(fig.align='center', echo=FALSE, messages=FALSE, warning = 
 
 #Load packages + setup
 library(rwebppl)
-library(tidyverse)
-library(ggjoy)
+library(here)
 library(directlabels)
+library(ggthemes)
 library(lme4)
-
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
-
-theme_set(theme_bw(base_size = 14) + theme(panel.grid = element_blank(),
-                  strip.background = element_blank()))
+library(tidyverse)
+library(tictoc)
+library(here)
+theme_set(theme_few(base_size = 14))
 ```
 
+# Estimate learn probs
+```{r estimate-ps, eval = FALSE}
 
+possibilities <-  expand_grid(known1 = c(0, 1, 2, 3),
+                              known2 = c(0, 1, 2, 3), 
+                              known3 = c(0, 1, 2, 3)) 
+
+
+webbpl_estimated_ps <- webppl(
+  program_file = here("webppl/estimate_learn_probs.wppl"), 
+  data = possibilities, data_var = "possibilities")
+
+estimated_ps <- possibilities %>%
+  mutate(estimated_p = webbpl_estimated_ps)
+
+write_csv(estimated_ps, here("helpers/estimated_ps.csv"))
+
+```
 ### Run Model (or read in saved copy below)
-```{r}
+```{r read-datamodel}
+full_explicit <- read_csv(here("empirical_data/1.30.2019_explicit_model.csv")) %>%
+  select(-predictions)
 
-full_explicit <- read_csv("empirical_data/1.30.2019_explicit_model.csv")
+estimated_ps <- read_csv(here("helpers/estimated_ps.csv"))
 
-all_data_dropped <- full_explicit %>% filter(toBeDropped==0)
-
-  
-empiricalExplicitVocabs <- all_data_dropped %>%
-  group_by(ldf_num, condition, partnersExposure, realLabel, exposureRate, trueClickPoints, trueLabelPoints) %>%
-  summarize(testCorrect=first(testCorrect)) %>%
-  rename(exposures=exposureRate,
-         label= realLabel) %>%
-  ungroup() %>%
-  mutate(known = ifelse(testCorrect == 1, TRUE, FALSE),
-         pointCost = 100 - trueClickPoints,
+all_data_dropped <- full_explicit %>% 
+  filter(toBeDropped == 0) %>%
+  rename(exposures = exposureRate, label = realLabel) %>%
+  mutate(pointCost = 100 - trueClickPoints,
          speechCost = 100- trueLabelPoints,
-         condition=as.factor(condition))  %>%
-  as.data.frame()
+         condition = as.factor(condition)) 
+
+empiricalExplicitVocabs <- all_data_dropped %>%
+  group_by(ldf_num, condition, partnersExposure, label, exposures, 
+           trueClickPoints, trueLabelPoints, pointCost, speechCost) %>%
+  summarize(testCorrect = first(testCorrect)) %>%
+  mutate(known = if_else(testCorrect == 1, TRUE, FALSE)) %>%
+  ungroup()
 
  
- 
+tidy_vocabs <- empiricalExplicitVocabs %>%
+  group_by(condition,ldf_num, exposures) %>%
+  summarise(known = sum(known)) 
 
-# # ### this line runs webppl model
-t1 <- proc.time()
-outcomes<-webppl(program_file = "speaker_clean.wppl", data=empiricalExplicitVocabs, data_var = "empiricalVocabs")
+participant_ps <- tidy_vocabs %>%
+  pivot_wider(names_from = "exposures", values_from = "known") %>%
+  left_join(estimated_ps, by = c(`1` = "known1", `2` = "known2", 
+                                 `4` = "known3")) %>%
+  select(condition, ldf_num, estimated_p)
 
+model_data <- empiricalExplicitVocabs %>%
+  left_join(participant_ps, by = c("condition", "ldf_num"))
 
+trial_level_data <- model_data %>%
+  right_join(select(all_data_dropped, ldf_num, condition, partnersExposure, 
+                    label, appearance, method, score), 
+             by = c("ldf_num", "condition", "partnersExposure", "label"))
 
-gamePredictions_1.30 <-outcomes %>%
-  unnest(predictions,  gameTrials) %>%
-    cbind(appearance= rep.int(c(1,2,3), nrow(.)/3))
-
-
+sample_data <- trial_level_data %>% filter(ldf_num %in% 1:10)
 ```
 
+```{r run-model}
+# # ### this line runs webppl model
+tic()
+outcomes <- webppl(program_file = "webppl/fit_model.wppl", 
+                 data = trial_level_data, 
+                 data_var = "empiricalVocabs") 
+toc()
+
+tidy_outcomes <- outcomes %>%
+  pivot_wider(names_from = "Parameter", values_from = "value")
+
+
+ggplot(outcomes, aes(x = Iteration, y = value)) + 
+  geom_point() +
+  facet_wrap(~ Parameter, scales = "free")
+
+outcomes %>%
+  group_by(Parameter) %>%
+  summarise(mean = mean(value))
+
+ggplot(outcomes, aes(x = value, fill = Parameter)) + 
+  facet_wrap(~ Parameter, scales = "free") + 
+  geom_histogram()
+
+
+tidy_outcomes <- outcomes %>%
+  as_tibble() %>%
+  unnest(cols = c(gameTrials, predictions)) %>%
+  rename(ldf_num = me) %>%
+  group_by(ldf_num, utilityCondition, gameTrials) %>%
+  mutate(appearance = 1:n())
+```
+
+
+```{r predicted_data}
+predicted_data <- all_data_dropped %>%
+  left_join(tidy_outcomes, by = c("ldf_num", "appearance", 
+                                  "utilityCondition", "label" = "gameTrials"))
+
+
+group_predictions <- predicted_data %>%
+  pivot_longer(cols = c(method, predictions), names_to = "type", 
+               values_to = "response") %>%
+  group_by(type, condition, response, partnersExposure, exposures, 
+           appearance, ldf_num) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / 3) %>%
+  complete(nesting(condition, ldf_num, partnersExposure), type, response, exposures,
+           appearance, fill = list(n = 0)) %>%
+  summarise(prop = mean(prop)) %>% 
+  pivot_wider(names_from = "type", values_from = "prop")
+
+ggplot(group_predictions, aes(x = predictions, y = method, color = response)) + 
+  geom_point()
+
+```
 
 
 ```{r}
